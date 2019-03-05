@@ -1,0 +1,9 @@
+rootdir<-"/home/imlay/storage/BIOE594"
+setwd(rootdir)
+infiles<-Sys.glob("rawdata/*")
+print(infiles)
+finfo<-file.info(infiles[1])
+raw_file<-file(infiles[1],"rb")
+image_data<-as.integer(readBin(raw_file,raw(),size=1,n=finfo$size,endian="little"))
+d<-matrix(image_data,nrow=sqrt(length(image_data)))
+rasterImage(d)
