@@ -1,0 +1,95 @@
+---
+title: "Eigenface Notebook"
+params:
+  n_features: 100
+output:
+  html_document:
+    df_print: paged
+  html_notebook: default
+---
+```{r required packages,message=FALSE,warning=FALSE}
+source("eigenfaces.R")
+library(plyr)
+library(knitr)
+library(kableExtra)
+library(ggplot2)
+library(gridExtra)
+```
+## Introduction
+The data consists of 3993 pictures of human faces at a resolution of 128 x 128 in 8-bit grayscale. Data can be obtained from [MIT](http://courses.media.mit.edu/2004fall/mas622j/04.projects/faces/).
+
+## Data Import
+The eigenface rawdata is packaged with this repository and can be loaded with the following code. Two pictures were remove from the rawdata as provided from MIT because they were of incorrect dimensions: 2416 and 2412. Moreover, 22 faces are removed for having no parsed information.
+
+```{r data import, message=FALSE, warning=FALSE, include=TRUE}
+source("eigenfaces.R")
+dat<-importFaceMatrix()
+```
+
+Each picture is represented as vector of length 128^2^=16,384. This vector can be reshaped into a raster, which can be colored with a color scale — grayscale in our case. Three random faces have been generated below.
+
+```{r plot images,fig.height=3,fig.width=9,fig.align='center',collapse=TRUE,results= 'hold'}
+#This code may be run multiple times to see the huge diversity of images in the data.
+par(mfrow=c(1,3))
+selected<-sample(rownames(dat),3)
+{plotImage(dat[selected[1],],selected[1])
+plotImage(dat[selected[2],],selected[2])
+plotImage(dat[selected[3],],selected[3])}
+```
+
+## Metadata Import
+
+The metadata comes from MIT already split into two sets, training and testing.
+
+```{r meta import,message=FALSE,warning=FALSE,include=TRUE}
+meta_TR<-importMetaMatrix("faces/faceDR")
+meta_T<-importMetaMatrix("faces/faceDS")
+```
+
+```{r metadata barplot,echo=FALSE,fig.height=6,fig.width=9,fig.align='center'}
+{p1<-qplot(sex,data=meta_TR)+ggtitle("Sex")+coord_flip()+theme_classic()
+p2<-qplot(age,data=meta_TR)+ggtitle("Age")+coord_flip()+theme_classic()
+p3<-qplot(race,data=meta_TR)+ggtitle("Race")+coord_flip()+theme_classic()
+p4<-qplot(face,data=meta_TR)+ggtitle("Face")+coord_flip()+theme_classic()
+p5<-qplot(prop,data=meta_TR)+ggtitle("Prop")+coord_flip()+theme_classic()
+grid.arrange(p1,p2,p3,p4,p5,tableGrob(count(meta_TR[,2:3]),rows=NULL),ncol=3,top="Exploratory Data Analysis")}
+```
+
+```{r metadata tables,echo=FALSE,include=FALSE}
+kable(count(meta_TR[,2:3]), align = "c") %>%
+  kable_styling(bootstrap_options = "striped", full_width = F)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
