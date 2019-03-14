@@ -1,11 +1,12 @@
 ---
 title: "Eigenface Notebook"
 params:
-  n_features: 100
+  n_features: 20
 output:
+  html_notebook: default
+  pdf_document: default
   html_document:
     df_print: paged
-  html_notebook: default
 ---
 ```{r required packages,message=FALSE,warning=FALSE}
 source("eigenfaces.R")
@@ -14,6 +15,9 @@ library(knitr)
 library(kableExtra)
 library(ggplot2)
 library(gridExtra)
+library(factoextra)
+library(caret)
+library(gbm)
 ```
 ## Introduction
 The data consists of 3993 pictures of human faces at a resolution of 128 x 128 in 8-bit grayscale. Data can be obtained from [MIT](http://courses.media.mit.edu/2004fall/mas622j/04.projects/faces/).
@@ -28,7 +32,7 @@ dat<-importFaceMatrix()
 
 Each picture is represented as vector of length 128^2^=16,384. This vector can be reshaped into a raster, which can be colored with a color scale — grayscale in our case. Three random faces have been generated below.
 
-```{r plot images,fig.height=3,fig.width=9,fig.align='center',collapse=TRUE,results= 'hold'}
+```{r plot images,fig.height=3,fig.width=9,collapse=TRUE,results= 'hold'}
 #This code may be run multiple times to see the huge diversity of images in the data.
 par(mfrow=c(1,3))
 selected<-sample(rownames(dat),3)
@@ -44,27 +48,82 @@ The metadata comes from MIT already split into two sets, training and testing.
 ```{r meta import,message=FALSE,warning=FALSE,include=TRUE}
 meta_TR<-importMetaMatrix("faces/faceDR")
 meta_T<-importMetaMatrix("faces/faceDS")
+meta_TR<-meta_TR[meta_TR$n %in% rownames(dat),] # Remove any examples from metadata that are not in the data.
+meta_T<-meta_T[meta_T$n %in% rownames(dat),]
+dat_TR<-dat[meta_TR$n,]
+dat_T<-dat[meta_T$n,]
+rm(dat)
 ```
 
 ```{r metadata barplot,echo=FALSE,fig.height=6,fig.width=9,fig.align='center'}
-{p1<-qplot(sex,data=meta_TR)+ggtitle("Sex")+coord_flip()+theme_classic()
+foo<-function() {p1<-qplot(sex,data=meta_TR)+ggtitle("Sex")+coord_flip()+theme_classic()
 p2<-qplot(age,data=meta_TR)+ggtitle("Age")+coord_flip()+theme_classic()
 p3<-qplot(race,data=meta_TR)+ggtitle("Race")+coord_flip()+theme_classic()
 p4<-qplot(face,data=meta_TR)+ggtitle("Face")+coord_flip()+theme_classic()
 p5<-qplot(prop,data=meta_TR)+ggtitle("Prop")+coord_flip()+theme_classic()
 grid.arrange(p1,p2,p3,p4,p5,tableGrob(count(meta_TR[,2:3]),rows=NULL),ncol=3,top="Exploratory Data Analysis")}
+foo()
+```
+## Average faces
+```{r cmeans,echo=FALSE,,fig.height=3,fig.width=9}
+
+par(mfrow=c(1,3))
+foo<-function() {cmeans = colMeans(dat_TR)
+  plotImage(cmeans,"Average Face")
+plotImage(colMeans(dat_TR[meta_TR[meta_TR$sex==" female ",]$n,]),"Average Female Face")
+plotImage(colMeans(dat_TR[meta_TR[meta_TR$sex==" male ",]$n,]),"Average Male Face")}
+foo()
+```
+## Eigen faces
+```{r pca}
+pca.res<-prcomp(dat_TR,center=TRUE,rank. = params$n_features)
 ```
 
-```{r metadata tables,echo=FALSE,include=FALSE}
-kable(count(meta_TR[,2:3]), align = "c") %>%
-  kable_styling(bootstrap_options = "striped", full_width = F)
+```{r PCA diagnostics, echo=FALSE,fig.height=7}
+foo<-function(){
+eigs <- (pca.res$sdev)^2
+x<-data.frame(Sdev = sqrt(eigs),
+  Proportion = round(eigs/sum(eigs),digits = 3),
+  Cumulative = round(cumsum(eigs)/sum(eigs),digits=3))
+p1<-fviz_screeplot(pca.res,addlabels=TRUE)
+p2<-tableGrob(x[seq(params$n_features),c(2,3)])
+grid.arrange(p1,p2,ncol=2)}
+foo()
 ```
 
+```{r plot eigen faces,echo=FALSE}
+par(mfrow = c(2, 5))
+par(oma = rep(2, 4), mar = c(0, 0, 3, 0))
+for(i in seq(1:10)) {
+  plotImage(pca.res$rotation[,i],paste0(i))
+}
+```
 
+# ML with Caret
+NZV filtering removes features that satisfy either of the following two conditions:
+1. the frequency of the most prevalent value over the second most frequent value (called the “frequency ratio’’), which would be near one for well-behaved predictors and very large for highly-unbalanced data.
+2. the “percent of unique values’’ is the number of unique values divided by the total number of samples (times 100) that approaches zero as the granularity of the data increases
 
+```{r NZV}
+NZV_dat_TR<-nsv_filter(dat_TR,verbose = TRUE)
+```
+```{r caret preprocessing}
+registerDoSEQ()
+fitControl <- trainControl(## 10-fold CV
+                           method = "repeatedcv",
+                           number = 10,
+                           ## repeated ten times
+                           repeats = 10)
+training<-as.data.frame(cbind(Sex=meta_TR$sex,NZV_dat_TR))
+gbmFit1 <- train(Sex ~ ., data = training, 
+                 method = "gbm", 
+                 trControl = fitControl,
+                 ## This last option is actually one
+                 ## for gbm() that passes through
+                 verbose = FALSE)
+gbmFit1
 
-
-
+```
 
 
 

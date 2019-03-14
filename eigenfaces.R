@@ -93,7 +93,18 @@ plotImage <- function(v, title = NULL,color_scale=gray.colors(
     main = title
   ))
 }
-
+nsv_filter<-function(mat,verbose=FALSE) {
+  if(verbose) {
+    print(paste0("Input:",ncol(mat)))
+  }
+  nsv<-caret::nearZeroVar(mat,allowParallel=TRUE)
+  mat<-mat[,-nsv]
+  if(verbose) {
+    print(paste0("Output:",ncol(mat)))
+  }
+  return(mat)
+}
 #dat <- importFaceMatrix(verbose = TRUE)
 #meta_TR<-importMetaMatrix("faces/faceDR",verbose=FALSE)
 #meta_T<-importMetaMatrix("faces/faceDS",verbose=FALSE)
+#write.table(dat,"data/dat.tsv",sep="\t",quote = FALSE,col.names=FALSE)

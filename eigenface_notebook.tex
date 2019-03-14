@@ -121,9 +121,36 @@
     \date{}
     \predate{}\postdate{}
   
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{wrapfig}
+\usepackage{float}
+\usepackage{colortbl}
+\usepackage{pdflscape}
+\usepackage{tabu}
+\usepackage{threeparttable}
+\usepackage{threeparttablex}
+\usepackage[normalem]{ulem}
+\usepackage{makecell}
+\usepackage{xcolor}
 
 \begin{document}
 \maketitle
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{source}\NormalTok{(}\StringTok{"eigenfaces.R"}\NormalTok{)}
+\KeywordTok{library}\NormalTok{(plyr)}
+\KeywordTok{library}\NormalTok{(knitr)}
+\KeywordTok{library}\NormalTok{(kableExtra)}
+\KeywordTok{library}\NormalTok{(ggplot2)}
+\KeywordTok{library}\NormalTok{(gridExtra)}
+\KeywordTok{library}\NormalTok{(factoextra)}
+\KeywordTok{library}\NormalTok{(caret)}
+\end{Highlighting}
+\end{Shaded}
 
 \subsection{Introduction}\label{introduction}
 
@@ -133,31 +160,70 @@ x 128 in 8-bit grayscale. Data can be obtained from
 
 \subsection{Data Import}\label{data-import}
 
-The eigenface rawdata and metadata is packaged with this repository and
-can be loaded with the following code. Try executing this chunk by
-clicking the \emph{Run} button within the chunk or by placing your
-cursor inside it and pressing \emph{Ctrl+Shift+Enter}.
+The eigenface rawdata is packaged with this repository and can be loaded
+with the following code. Two pictures were remove from the rawdata as
+provided from MIT because they were of incorrect dimensions: 2416 and
+2412. Moreover, 22 faces are removed for having no parsed information.
 
 \begin{Shaded}
 \begin{Highlighting}[]
 \KeywordTok{source}\NormalTok{(}\StringTok{"eigenfaces.R"}\NormalTok{)}
 \NormalTok{dat<-}\KeywordTok{importFaceMatrix}\NormalTok{()}
-\NormalTok{meta_TR<-}\KeywordTok{importMetaMatrix}\NormalTok{(}\StringTok{"faces/faceDR"}\NormalTok{)}
-\NormalTok{meta_T<-}\KeywordTok{importMetaMatrix}\NormalTok{(}\StringTok{"faces/faceDS"}\NormalTok{)}
 \end{Highlighting}
 \end{Shaded}
 
-Add a new chunk by clicking the \emph{Insert Chunk} button on the
-toolbar or by pressing \emph{Ctrl+Alt+I}.
+Each picture is represented as vector of length
+128\textsuperscript{2}=16,384. This vector can be reshaped into a
+raster, which can be colored with a color scale --- grayscale in our
+case. Three random faces have been generated below.
 
-When you save the notebook, an HTML file containing the code and output
-will be saved alongside it (click the \emph{Preview} button or press
-\emph{Ctrl+Shift+K} to preview the HTML file).
+\begin{Shaded}
+\begin{Highlighting}[]
+\CommentTok{#This code may be run multiple times to see the huge diversity of images in the data.}
+\KeywordTok{par}\NormalTok{(}\DataTypeTok{mfrow=}\KeywordTok{c}\NormalTok{(}\DecValTok{1}\NormalTok{,}\DecValTok{3}\NormalTok{))}
+\NormalTok{selected<-}\KeywordTok{sample}\NormalTok{(}\KeywordTok{rownames}\NormalTok{(dat),}\DecValTok{3}\NormalTok{)}
+\NormalTok{\{}\KeywordTok{plotImage}\NormalTok{(dat[selected[}\DecValTok{1}\NormalTok{],],selected[}\DecValTok{1}\NormalTok{])}
+\KeywordTok{plotImage}\NormalTok{(dat[selected[}\DecValTok{2}\NormalTok{],],selected[}\DecValTok{2}\NormalTok{])}
+\KeywordTok{plotImage}\NormalTok{(dat[selected[}\DecValTok{3}\NormalTok{],],selected[}\DecValTok{3}\NormalTok{])\}}
+\end{Highlighting}
+\end{Shaded}
 
-The preview shows you a rendered HTML copy of the contents of the
-editor. Consequently, unlike \emph{Knit}, \emph{Preview} does not run
-any R code chunks. Instead, the output of the chunk when it was last run
-in the editor is displayed.
+\includegraphics{eigenface_notebook_files/figure-latex/plot images-1.pdf}
+
+\subsection{Metadata Import}\label{metadata-import}
+
+The metadata comes from MIT already split into two sets, training and
+testing.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{meta_TR<-}\KeywordTok{importMetaMatrix}\NormalTok{(}\StringTok{"faces/faceDR"}\NormalTok{)}
+\NormalTok{meta_T<-}\KeywordTok{importMetaMatrix}\NormalTok{(}\StringTok{"faces/faceDS"}\NormalTok{)}
+\NormalTok{meta_TR<-meta_TR[meta_TR}\OperatorTok{$}\NormalTok{n }\OperatorTok{%in%}\StringTok{ }\KeywordTok{rownames}\NormalTok{(dat),] }\CommentTok{# Remove any examples from metadata that are not in the data.}
+\NormalTok{meta_T<-meta_T[meta_T}\OperatorTok{$}\NormalTok{n }\OperatorTok{%in%}\StringTok{ }\KeywordTok{rownames}\NormalTok{(dat),]}
+\NormalTok{dat_TR<-dat[meta_TR}\OperatorTok{$}\NormalTok{n,]}
+\NormalTok{dat_T<-dat[meta_T}\OperatorTok{$}\NormalTok{n,]}
+\CommentTok{#rm(dat)}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{center}\includegraphics{eigenface_notebook_files/figure-latex/metadata barplot-1} \end{center}
+
+\subsection{Average faces}\label{average-faces}
+
+\includegraphics{eigenface_notebook_files/figure-latex/cmeans-1.pdf}
+\#\# ML with Caret
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{pca.res<-}\KeywordTok{prcomp}\NormalTok{(dat_TR,}\DataTypeTok{center=}\OtherTok{TRUE}\NormalTok{,}\DataTypeTok{rank. =}\NormalTok{ params}\OperatorTok{$}\NormalTok{n_features)}
+\end{Highlighting}
+\end{Shaded}
+
+\includegraphics{eigenface_notebook_files/figure-latex/pca diagnostics-1.pdf}
+
+\includegraphics{eigenface_notebook_files/figure-latex/plot eigen faces-1.pdf}
+\includegraphics{eigenface_notebook_files/figure-latex/plot eigen faces-2.pdf}
 
 
 \end{document}
