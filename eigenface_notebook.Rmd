@@ -2,6 +2,7 @@
 title: "Eigenface Notebook"
 params:
   n_features: 20
+bibliography: eigenfaces.bib
 output:
   html_notebook: default
   pdf_document: default
@@ -20,7 +21,11 @@ library(caret)
 library(gbm)
 ```
 ## Introduction
+The 1991 article *Eigenfaces for Recognition* was formative for the multimedia research fields [@Turk1991]. The dataset, which predates the *Eigenfaces for Recognition* article, has since become a benchmark for computer vision and machine learning.
+
+
 The data consists of 3993 pictures of human faces at a resolution of 128 x 128 in 8-bit grayscale. Data can be obtained from [MIT](http://courses.media.mit.edu/2004fall/mas622j/04.projects/faces/).
+
 
 ## Data Import
 The eigenface rawdata is packaged with this repository and can be loaded with the following code. Two pictures were remove from the rawdata as provided from MIT because they were of incorrect dimensions: 2416 and 2412. Moreover, 22 faces are removed for having no parsed information.
@@ -90,6 +95,7 @@ p2<-tableGrob(x[seq(params$n_features),c(2,3)])
 grid.arrange(p1,p2,ncol=2)}
 foo()
 ```
+Ei
 
 ```{r plot eigen faces,echo=FALSE}
 par(mfrow = c(2, 5))
@@ -125,6 +131,8 @@ gbmFit1
 
 ```
 
+
+# References
 
 
 
