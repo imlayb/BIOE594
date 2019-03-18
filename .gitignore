@@ -1,2 +1,4 @@
 data/
 ._.DS_Store
+*.html
+*.tex

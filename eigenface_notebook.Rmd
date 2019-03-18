@@ -4,10 +4,10 @@ params:
   n_features: 20
 bibliography: eigenfaces.bib
 output:
-  html_notebook: default
-  pdf_document: default
   html_document:
     df_print: paged
+  pdf_document: default
+  html_notebook: default
 ---
 ```{r required packages,message=FALSE,warning=FALSE}
 source("eigenfaces.R")
@@ -114,7 +114,7 @@ NZV filtering removes features that satisfy either of the following two conditio
 nzv<-nearZeroVar(dat_TR)
 NZV_dat_TR<-dat_TR[,-nzv]
 ```
-```{r caret preprocessing}
+```{r caret preprocessing,eval=FALSE}
 library(doSNOW)
 cl <- makeCluster(4)
   registerDoSNOW(cl)
