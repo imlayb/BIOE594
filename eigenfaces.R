@@ -59,6 +59,7 @@ importMetaMatrix <- function(file, verbose = FALSE) {
   for (f in features[-6]) {
     x[[f]] <- str_remove(x[[f]], "_[:alpha:]+[:blank:]")
     x[[f]] <- str_remove(x[[f]], "\\)")
+    x[[f]]<-str_trim(x[[f]],side = "both")
   }
   x$prop <- str_extract(x$prop, "[:alpha:]+|[:alpha:]+\\s[:alpha:]")
   before <- nrow(x)

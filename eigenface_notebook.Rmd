@@ -4,10 +4,10 @@ params:
   n_features: 20
 bibliography: eigenfaces.bib
 output:
+  html_notebook: default
+  pdf_document: default
   html_document:
     df_print: paged
-  pdf_document: default
-  html_notebook: default
 ---
 ```{r required packages,message=FALSE,warning=FALSE}
 source("eigenfaces.R")
@@ -18,7 +18,6 @@ library(ggplot2)
 library(gridExtra)
 library(factoextra)
 library(caret)
-library(gbm)
 ```
 ## Introduction
 The 1991 article *Eigenfaces for Recognition* was formative for the multimedia research fields [@Turk1991]. The dataset, which predates the *Eigenfaces for Recognition* article, has since become a benchmark for computer vision and machine learning.
@@ -57,7 +56,7 @@ meta_TR<-meta_TR[meta_TR$n %in% rownames(dat),] # Remove any examples from metad
 meta_T<-meta_T[meta_T$n %in% rownames(dat),]
 dat_TR<-dat[meta_TR$n,]
 dat_T<-dat[meta_T$n,]
-#rm(dat)
+rm(dat)
 ```
 
 ```{r metadata barplot,echo=FALSE,fig.height=6,fig.width=9,fig.align='center'}
@@ -84,7 +83,7 @@ foo()
 pca.res<-prcomp(dat_TR,center=TRUE,rank. = params$n_features)
 ```
 
-```{r PCA diagnostics, echo=FALSE,fig.height=7}
+```{r PCA diagnostics, echo=FALSE,fig.height=7,fig.width=10}
 foo<-function(){
 eigs <- (pca.res$sdev)^2
 x<-data.frame(Sdev = sqrt(eigs),
@@ -113,21 +112,17 @@ NZV filtering removes features that satisfy either of the following two conditio
 ```{r NZV}
 nzv<-nearZeroVar(dat_TR)
 NZV_dat_TR<-dat_TR[,-nzv]
+i<-rep(255,128*128)
+i[nzv]<-1
+plotImage(i,"Pixels Filtered by NZV")
 ```
-```{r caret preprocessing,eval=FALSE}
-library(doSNOW)
-cl <- makeCluster(4)
-  registerDoSNOW(cl)
-#cormat<-cor(dat_TR)
-#melted_cormat <- melt(cormat)
+
+```{r caret ML example,eval=FALSE}
 registerDoSEQ()
 fitControl <- trainControl(## 10-fold CV
                            method = "repeatedcv",
                            number = 10,
-                           ## repeated ten times
                            repeats = 10)
-meta_TR$sex<-as.factor(meta_TR$sex)
-#levels(meta_TR$sex)<-list("f"=c(" female "),"m"=c(" male "))
 training<-data.frame(Sex=meta_TR$sex,NZV_dat_TR)
 trainIndex <- createDataPartition(training$Sex, p = .3, 
                                   list = FALSE, 
@@ -138,13 +133,23 @@ preProcValues <- preProcess(training, method = c("center", "scale"))
 trainTransformed <- predict(preProcValues, training_training)
 testTransformed <- predict(preProcValues, training_test)
 
-gbmFit1 <- train(Sex ~ ., data = training_training, 
+gbmFit1 <- train(Sex ~ ., data = trainTransformed, 
                  method = "gbm", 
                  trControl = fitControl,
-                 ## This last option is actually one
-                 ## for gbm() that passes through
                  verbose = FALSE)
+preds<-predict(gbmFit1,testTransformed)
+```
 
+```{r automatic models,eval=FALSE}
+source("generateModels.R")
+fitControl <- trainControl(## 10-fold CV
+                           method = "repeatedcv",
+                           number = 2,
+                           ## repeated ten times
+                           repeats = 2)
+methods<-list("gbm")
+controls<-list(fitControl)
+x<-generateModels(NZV_dat_TR[1:10,],list(Sex=meta_TR[1:10,2]),methods=methods,controls=controls)
 ```
 
 

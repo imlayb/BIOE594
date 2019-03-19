@@ -3,3 +3,5 @@ data/
 *.html
 *.tex
 eigenface_notebook_files/
+models/
+nohup.out
