@@ -5,3 +5,4 @@ data/
 eigenface_notebook_files/
 models/
 nohup.out
+cp.sh

@@ -1,4 +1,4 @@
-#!usr/bin/env Rscript
+#!/usr/bin/env Rscript
 generateModels<-function(dat,meta_df,nThread=4,controls=list(),methods=c()) {
   cl <- makeCluster(nThread)
   registerDoSNOW(cl)
@@ -33,12 +33,12 @@ rm(dat)
 meta_TR$age<-as.factor(meta_TR$age);meta_TR$sex<-as.factor(meta_TR$sex);meta_TR$race<-as.factor(meta_TR$race);meta_TR$face<-as.factor(meta_TR$face)
 meta_T$age<-as.factor(meta_T$age);meta_T$sex<-as.factor(meta_T$sex);meta_T$race<-as.factor(meta_T$race);meta_T$face<-as.factor(meta_T$face)
 nzv<-nearZeroVar(dat_TR)
-NZV_dat_TR<-dat_TR[,-nzv]
+NZV_dat_TR<-dat_TR #  changed
 ##
-sel_class<-"age"
+sel_class<-"sex"
 training<-data.frame(Class=meta_TR[[sel_class]],NZV_dat_TR) ### Only thing needed to change selected class
 ##
-trainIndex <- createDataPartition(training$Class, p = .1, 
+trainIndex <- createDataPartition(training$Class, p = .75, 
                                   list = FALSE, 
                                   times = 1)
 training_training<-training[trainIndex,]
@@ -52,11 +52,11 @@ fitControl <- trainControl(## 10-fold CV
   number = 10,
   repeats = 10)
 registerDoSEQ() # necessary due to bug
-#gbmFit1 <- train(Class ~ ., data = trainTransformed, 
-#                 method = "gbm", 
-#                 trControl = fitControl,
-#                 verbose = FALSE)
-#preds<-predict(gbmFit1,testTransformed)
+gbmFit1 <- train(Class ~ ., data = trainTransformed, 
+                 method = "gbm", 
+                 trControl = fitControl,
+                 verbose = FALSE)
+predsgbm<-predict(gbmFit1,testTransformed)
 
 trctrl<-trainControl(method="cv",number=5)
 tune_grid <- expand.grid(nrounds=c(100,200,300,400), 
@@ -70,5 +70,6 @@ rf_fit <- train(Class ~., data = trainTransformed, method = "xgbTree",
                 trControl=trctrl,
                 tuneGrid = tune_grid,
                 tuneLength = 10)
-
-save.image(file.path("models",paste0(sel_class,"_models.Rdata")))
+predsrf<-predict(rf_fit,testTransformed)
+#confusionMatrix(data = preds, reference = testTransformed$Class)
+save.image(file.path("models",paste0(sel_class,"fullfeatures_models.Rdata")))
