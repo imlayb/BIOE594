@@ -79,7 +79,8 @@ foo()
 ```
 ## Eigen faces
 ```{r pca}
-pca.res<-prcomp(dat_TR,center=TRUE,rank. = params$n_features)
+pca.res<-prcomp(dat_TR,center=TRUE,rank. = params$n_features) # formal pca calculation using prcomp()
+
 ```
 
 ```{r PCA diagnostics, echo=FALSE,fig.height=7,fig.width=10}
@@ -120,43 +121,52 @@ for(i in sample(seq(nrow(dat_TR)),8)) {
 
 # ML with Caret
 
-NZV filtering removes features that satisfy either of the following two conditions:
-1. the frequency of the most prevalent value over the second most frequent value (called the “frequency ratio’’), which would be near one for well-behaved predictors and very large for highly-unbalanced data.
-2. the “percent of unique values’’ is the number of unique values divided by the total number of samples (times 100) that approaches zero as the granularity of the data increases
+Max Kuhn's `caret` package offers a modular framework for the preparation and deployment of numerous ML models. The `caret` system is intuitive and well [documented](https://topepo.github.io/caret/index.html).
 
-```{r NZV}
-#nzv<-nearZeroVar(dat_TR, uniqueCut = 1) # one percent of values must be unique
-nzv<-nearZeroVar(dat_TR)
-NZV_dat_TR<-dat_TR[,-nzv]
+I have decided to use near-zero variance filtering to remove pixels with no or very little variance. I.e., pixels that are almost always black. All models deal with uninformative variables in some way--sometimes poorly. Removing them outright during pre-processing avoids that altogether while also reducing the computational burden. As per the `caret` documentation:
+
+>NZV filtering removes features that satisfy either of the following two conditions:
+1. the frequency of the most prevalent value over the second most frequent value (called the “frequency ratio’’), which would be near one for well-behaved predictors and very large for highly-unbalanced data.
+2. the “percent of unique values’’ is the number of unique values divided by the total number of samples (times 100) that approaches zero as the granularity of the data increases.
+
+I have modified the filtering to require only five percent of values to be unique, which translates into an allowance of nearly `r round(nrow(dat_TR)*.01)` permitted outliers. I imagine these as images which extend farther into the black space than most. The reasoning to do this is that some images feature larger hair or hat, which could be sparse, yet informative latent features.
+
+
+
+```{r pre-processing data splitting}
+sel_class<-"sex"
+nzv<-nearZeroVar(dat_TR, uniqueCut = 1) # one percent of values must be unique
 non_nzv<-seq(ncol(dat_TR))[-nzv]
 i<-rep(255,128*128)
 i[nzv]<-1
 plotImage(i,"Pixels Filtered by NZV")
-```
 
-```{r caret ML example,eval=FALSE}
-class<-"sex"
-training<-data.frame(Class=meta_TR[[class]],NZV_dat_TR)
-trainIndex <- createDataPartition(training[[class]], p = .3, 
-                                  list = FALSE, 
-                                  times = 1)
-training_training<-training[trainIndex,]
-training_test<-training[-trainIndex,]
+training<-data.frame(Class=meta_TR[[sel_class]],dat_TR[,-nzv])
+test<-data.frame(Class=meta_T[[sel_class]],dat_T[,-nzv])
 preProcValues <- preProcess(training, method = c("center", "scale"))
-trainTransformed <- predict(preProcValues, training_training)
-testTransformed <- predict(preProcValues, training_test)
+trainTransformed <- predict(preProcValues, training)
+testTransformed<-predict(preProcValues, test)
 ```
+After pre-processing, the transformed training data generates four models. More information about each model can be found in the `caret` documentation. I chose these models to cover a variety of types: boosted, regression, ensemble, decision tree/rule-based, and regression. This panel is not exhaustive by any means.
 
-```{r model generation example,eval=FALSE}
-fitControl <- trainControl
-  method = "repeatedcv",
-  number = 10,
-  repeats = 10)
-gbmFit1 <- train(Class ~ ., data = trainTransformed, 
-                 method = "gbm", 
-                 trControl = fitControl,
-                 verbose = FALSE)
-tune_grid <- expand.grid(nrounds=c(100,200,300,400), 
+```{r model generation,eval=FALSE}
+liftCtrl <- trainControl(method = "cv", classProbs = TRUE,
+                     summaryFunction = twoClassSummary)
+c5 <- train(Class ~ ., data = trainTransformed,
+                 method = "C5.0", metric = "ROC",
+                 tuneLength = 10,
+                 trControl = liftCtrl,
+                 control = C50::C5.0Control(earlyStopping = FALSE))
+fda<- train(Class ~ ., data = trainTransformed,
+                  method = "fda", metric = "ROC",
+                  tuneLength = 20,
+                  trControl = liftCtrl)
+glmBoost_grid = expand.grid(mstop = c(50, 100, 150, 200, 250, 300),
+                           prune = c('yes', 'no'))
+glmboost<-train(Class~.,data=trainTransformed,
+                method="glmboost",metric='ROC',
+                trControl=liftCtrl,tuneGrid=glmBoost_grid)
+XGB_grid <- expand.grid(nrounds=c(100,200,300,400), 
                          max_depth = c(3:7),
                          eta = c(0.05, 1),
                          gamma = c(0.01),
@@ -164,15 +174,22 @@ tune_grid <- expand.grid(nrounds=c(100,200,300,400),
                          subsample = c(0.50),
                          min_child_weight = c(0))
 rf_fit <- train(Class ~., data = trainTransformed, method = "xgbTree",
-                trControl=trainControl(method="cv",number=5),
-                tuneGrid = tune_grid,
-                tuneLength = 10)
+                trControl=liftCtrl,
+                tuneGrid = XGB_grid,
+                tuneLength = 10,
+                metric='ROC')
 ```
 
+```{r get models,echo=FALSE,eval=TRUE}
+# The models have been generated with the generateModels.R script.
+load(file.path("models","sexclean_lift_models.Rdata"))
+```
 
-```{r model analysis}
-load(file.path("models","sex_models.Rdata"))
-imp<-varImp(rf_fit,scale=TRUE)$importance
+The models 
+
+```{r model analysis,message=FALSE}
+plotVarImp<-function(model,title=NULL) {
+imp<-varImp(model,scale=TRUE)$importance
 imp<-cbind(imp,i=as.numeric(stringr::str_remove(rownames(imp),"X")))
 imp<-imp[order(imp$i),]
 i<-rep(0,128*128)
@@ -182,9 +199,77 @@ image(
     d[, nrow(d):1],
     col = viridis::viridis(500),
     axes = FALSE,
-    main="Important variables for sex classification")
-
+    main=paste0("varImp ",ifelse(is.null(title),yes = "",no = title)))
+}
+par(mfrow = c( 1,2))
+par(mar = c(0, 0, 3, 0))
+{plotVarImp(fda,title="FDA")
+plotVarImp(glmboost,title="GLM Boost")
+plotVarImp(rf_fit,title="XGBoost Tree")
+plotVarImp(c5,title="C5.0")}
 ```
+
+```{r lift plots}
+lift_results <- data.frame(Class = testTransformed$Class)
+lift_results$FDA <- predict(fda, testTransformed, type = "prob")[,"female"]
+lift_results$XGB <- predict(rf_fit, testTransformed, type = "prob")[,"female"]
+lift_results$C5.0 <- predict(c5, testTransformed, type = "prob")[,"female"]
+lift_results$GLMB <- predict(glmboost, testTransformed, type = "prob")[,"female"]
+lift_obj <- lift(Class ~ FDA + XGB + C5.0+GLMB, data = lift_results)
+ggplot(lift_obj, values = 60)
+```
+
+```{r confusion mats}
+p_results<-data.frame(Class=test$Class)
+p_results$FDA <- predict(fda, testTransformed)
+p_results$XGB <- predict(rf_fit, testTransformed)
+p_results$C5.0 <- predict(c5, testTransformed)
+p_results$GLMB <- predict(glmboost, testTransformed)
+cMat_FDA<-confusionMatrix(data = p_results$FDA, reference = p_results$Class)
+cMat_XGB<-confusionMatrix(data = p_results$XGB, reference = p_results$Class)
+cMat_C5.0<-confusionMatrix(data = p_results$C5.0, reference = p_results$Class)
+cMat_GLMB<-confusionMatrix(data = p_results$GLMB, reference = p_results$Class)
+```
+
+```{r tables,echo=FALSE}
+kable(cMat_FDA$table,"html") %>% 
+  kable_styling(bootstrap_options = "striped", full_width = F,position="float_left") %>% 
+    add_header_above(c("Pred.","Ref."= 2)) %>%
+      add_header_above(c("FDA"= 3))
+kable(cMat_XGB$table,"html") %>% 
+  kable_styling(bootstrap_options = "striped", full_width = F,position="float_left") %>% 
+    add_header_above(c("Pred.","Ref."= 2)) %>%
+      add_header_above(c("XGBoost"= 3))
+kable(cMat_C5.0$table,"html") %>% 
+  kable_styling(bootstrap_options = "striped", full_width = F,position="float_left") %>% 
+    add_header_above(c("Pred.","Ref."= 2)) %>%
+      add_header_above(c("C5.0"= 3))
+kable(cMat_GLMB$table,"html") %>% 
+  kable_styling(bootstrap_options = "striped", full_width = F,position="float_left") %>% 
+    add_header_above(c("Pred.","Ref."= 2)) %>%
+      add_header_above(c("GLMBoost"= 3))
+```
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+```{r performance stats}
+perf<-rbind(FDA=c(cMat_FDA$overall["Accuracy"],cMat_FDA$byClass[c(1,2,5,6,7,8,9,10,11)]),
+                  XBG=c(cMat_XGB$overall["Accuracy"],cMat_XGB$byClass[c(1,2,5,6,7,8,9,10,11)]),
+                        C5.0=c(cMat_C5.0$overall["Accuracy"],cMat_C5.0$byClass[c(1,2,5,6,7,8,9,10,11)]),
+                              GMLBoost=c(cMat_GLMB$overall["Accuracy"],cMat_GLMB$byClass[c(1,2,5,6,7,8,9,10,11)]))
+kable(perf,"html") %>% 
+  kable_styling(bootstrap_options = "striped", full_width = F)
+```
+
 
 
 # References
