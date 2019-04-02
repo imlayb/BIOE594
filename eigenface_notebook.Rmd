@@ -4,9 +4,8 @@ params:
   n_features: 1000
 bibliography: eigenfaces.bib
 output:
+  html_document: default
   html_notebook: default
-  html_document:
-    df_print: paged
 ---
 ```{r required packages,message=FALSE,warning=FALSE}
 source("eigenfaces.R")
@@ -18,6 +17,7 @@ library(gridExtra)
 library(factoextra)
 library(caret)
 ```
+
 ## Introduction
 
 The 1991 article *Eigenfaces for Recognition* was formative for the multimedia research fields [@Turk1991]. The MIT Faces Recognition Project database, which predates the *Eigenfaces for Recognition* article, has since become a benchmark for computer vision and machine learning.
@@ -68,9 +68,10 @@ p5<-qplot(prop,data=meta_TR)+ggtitle("Prop")+coord_flip()+theme_classic()
 grid.arrange(p1,p2,p3,p4,p5,tableGrob(count(meta_TR[,2:3]),rows=NULL),ncol=3,top="Exploratory Data Analysis")}
 foo()
 ```
-## Average faces
-```{r cmeans,echo=FALSE,,fig.height=3,fig.width=9}
 
+## Average faces
+
+```{r cmeans,echo=FALSE,,fig.height=3,fig.width=9}
 par(mfrow=c(1,3))
 foo<-function() {cmeans = colMeans(dat_TR)
   plotImage(cmeans,"Average Face")
@@ -81,28 +82,28 @@ foo()
 
 ## Eigen faces
 
-```{r load pca,echo=FALSE}
-load(file.path("models","pca.Rdata"))
+```{r load svd,echo=FALSE}
+load(file.path("models","svd.Rdata"))
+c_means<-colMeans(dat_TR)
+c_dat_TR<-scale(dat_TR, center = 1 * c_means, scale=FALSE)
 ```
 
-```{r pca,eval=FALSE}
-pca.res<-prcomp(dat_TR,center=TRUE,rank. = params$n_features) # formal pca calculation using prcomp()
+
+## SVD and Eigenfaces
+
+```{r SVD,eval=FALSE}
+c_means<-colMeans(dat_TR)
+c_dat_TR<-scale(dat_TR, center = 1 * c_means, scale=FALSE) # Centers each pixel.
+svd.res<-svd(c_dat_TR)
 ```
 
-```{r PCA diagnostics, echo=FALSE,fig.height=7,fig.width=10}
-foo<-function(){
-eigs <- (pca.res$sdev)^2
-x<-data.frame(Sdev = sqrt(eigs),
-  Proportion = round(eigs/sum(eigs),digits = 3),
-  Cumulative = round(cumsum(eigs)/sum(eigs),digits=3))
-p1<-fviz_screeplot(pca.res,addlabels=TRUE)
-p2<-tableGrob(x[seq(20),c(2,3)])
-grid.arrange(p1,p2,ncol=2)}
-#foo()
+SVD is a decomposition method that is applicable for any matrix, and is defined by the following equation:
 
-```
+$$A=USV^T$$
 
-```{r SVD diagnostics,fig.height=7,fig.width=10}
+In R, `svd()` produces `u`, which represents $U$; `d`. which is a vector for $S$; `v`, which represents $V^T$.
+
+```{r SVD diagnostics,fig.height=7,fig.width=10,echo=FALSE}
 foo2<-function(d) {
   x<-data.frame(ith_Eig=1:d,
                 Proportion = round(svd.res$d^2/sum(svd.res$d^2),3)[1:d],
@@ -118,20 +119,6 @@ p1<-ggplot(data=x[1:5,])+
 p2<-tableGrob(x[1:20,c(2,3)])
 grid.arrange(p1,p2,ncol=2)
 ```
-
-## SVD and Eigenfaces
-
-```{r SVD}
-c_means<-colMeans(dat_TR)
-c_dat_TR<-scale(dat_TR, center = 1 * c_means, scale=FALSE)
-svd.res<-svd(c_dat_TR)
-```
-
-SVD is a decomposition method that is applicable for any matrix, and is defined by the following equation:
-
-$$A=USV^T$$
-
-In R, `svd()` produces `u`, which represents $U$; `d`. which is a vector for $S$; `v`, which represents $V^T$.
 
 Eigenfaces are created from $V_{d,k}$ where $k$ is the number of desired eigenfaces. In R, this is simply `t(svd.res$v[,1:k])`.
 
@@ -149,10 +136,17 @@ SVD can be used to make low-rank approximations of points within the original ma
 
 ```{r Reconstruct Matrix}
 S<-diag(svd.res$d)
-S<-S[,1:params$n_features]
+Ss<-S[,1:params$n_features]
 V<-svd.res$v[,1:params$n_features]
-restr<-svd.res$u %*% S %*% t(VT) # U * S * V^T
+restr<-svd.res$u %*% Ss %*% t(V) # U * S * V^T
 restr <- scale(restr, center = -1 * c_means, scale=FALSE)
+```
+
+```{r Reconstruct one,eval=FALSE}
+Sss<-S[,10]
+V<-svd.res$v[,1:params$n_features]
+gx<-svd.res$u[,] %*% Sss %*% t(V) # U * S * V^T
+gx <- scale(restr, center = -1 * c_means, scale=FALSE)
 ```
 
 These reconstructed faces can be plotted and compared to the original images.
@@ -179,7 +173,7 @@ I have decided to use near-zero variance filtering to remove pixels with no or v
 
 I have modified the filtering to require only five percent of values to be unique, which translates into an allowance of nearly `r round(nrow(dat_TR)*.01)` permitted outliers. I imagine these as images which extend farther into the black space than most. The reasoning to do this is that some images feature larger hair or hat, which could be sparse, yet informative latent features.
 
-```{r pre-processing data splitting}
+```{r pre-processing data splitting,fig.height=6,fig.width=7}
 sel_class<-"sex"
 nzv<-nearZeroVar(dat_TR, uniqueCut = 5) # one percent of values must be unique
 non_nzv<-seq(ncol(dat_TR))[-nzv]
