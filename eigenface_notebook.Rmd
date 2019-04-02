@@ -4,9 +4,9 @@ params:
   n_features: 1000
 bibliography: eigenfaces.bib
 output:
+  html_notebook: default
   html_document:
     df_print: paged
-  html_notebook: default
 ---
 ```{r required packages,message=FALSE,warning=FALSE}
 source("eigenfaces.R")
@@ -19,7 +19,8 @@ library(factoextra)
 library(caret)
 ```
 ## Introduction
-The 1991 article *Eigenfaces for Recognition* was formative for the multimedia research fields [@Turk1991]. The dataset, which predates the *Eigenfaces for Recognition* article, has since become a benchmark for computer vision and machine learning.
+
+The 1991 article *Eigenfaces for Recognition* was formative for the multimedia research fields [@Turk1991]. The MIT Faces Recognition Project database, which predates the *Eigenfaces for Recognition* article, has since become a benchmark for computer vision and machine learning.
 
 
 The data consists of 3993 pictures of human faces at a resolution of 128 x 128 in 8-bit grayscale. Data can be obtained from [MIT](http://courses.media.mit.edu/2004fall/mas622j/04.projects/faces/).
@@ -77,10 +78,15 @@ plotImage(colMeans(dat_TR[meta_TR[meta_TR$sex=="female",]$n,]),"Average Female F
 plotImage(colMeans(dat_TR[meta_TR[meta_TR$sex=="male",]$n,]),"Average Male Face")}
 foo()
 ```
-## Eigen faces
-```{r pca}
-pca.res<-prcomp(dat_TR,center=TRUE,rank. = params$n_features) # formal pca calculation using prcomp()
 
+## Eigen faces
+
+```{r load pca,echo=FALSE}
+load(file.path("models","pca.Rdata"))
+```
+
+```{r pca,eval=FALSE}
+pca.res<-prcomp(dat_TR,center=TRUE,rank. = params$n_features) # formal pca calculation using prcomp()
 ```
 
 ```{r PCA diagnostics, echo=FALSE,fig.height=7,fig.width=10}
@@ -92,24 +98,66 @@ x<-data.frame(Sdev = sqrt(eigs),
 p1<-fviz_screeplot(pca.res,addlabels=TRUE)
 p2<-tableGrob(x[seq(20),c(2,3)])
 grid.arrange(p1,p2,ncol=2)}
-foo()
+#foo()
+
 ```
 
+```{r SVD diagnostics,fig.height=7,fig.width=10}
+foo2<-function(d) {
+  x<-data.frame(ith_Eig=1:d,
+                Proportion = round(svd.res$d^2/sum(svd.res$d^2),3)[1:d],
+                Cumulative = round(cumsum(svd.res$d^2)/sum(svd.res$d^2),3)[1:d])
+  return(x)
+}
+x<-foo2(100)
+p1<-ggplot(data=x[1:5,])+
+  geom_line(aes(x=ith_Eig,y=Proportion),linetype='dashed')+
+  geom_point(aes(x=ith_Eig,y=Proportion))+
+  geom_label(aes(x=ith_Eig,y=Proportion,label=Proportion),nudge_x = .5,nudge_y = .005)+
+  theme_classic()+ggtitle("Proportion of Variance Explained")
+p2<-tableGrob(x[1:20,c(2,3)])
+grid.arrange(p1,p2,ncol=2)
+```
+
+## SVD and Eigenfaces
+
+```{r SVD}
+c_means<-colMeans(dat_TR)
+c_dat_TR<-scale(dat_TR, center = 1 * c_means, scale=FALSE)
+svd.res<-svd(c_dat_TR)
+```
+
+SVD is a decomposition method that is applicable for any matrix, and is defined by the following equation:
+
+$$A=USV^T$$
+
+In R, `svd()` produces `u`, which represents $U$; `d`. which is a vector for $S$; `v`, which represents $V^T$.
+
+Eigenfaces are created from $V_{d,k}$ where $k$ is the number of desired eigenfaces. In R, this is simply `t(svd.res$v[,1:k])`.
 
 ```{r plot eigen faces,echo=FALSE}
 par(mfrow = c(2, 5))
 par(oma = rep(2, 4), mar = c(0, 0, 3, 0))
 for(i in seq(1:10)) {
-  plotImage(pca.res$rotation[,i],paste0(i))
+  plotImage(t(svd.res$v[,i]),paste0(i))
 }
 ```
-# Reconstruct Faces
+
+## Reconstruct Faces
+
+SVD can be used to make low-rank approximations of points within the original matrix. In our case, we can reconstruct the original matrix using `r params$n_features` features, which is specified as a parameter in this document.
+
 ```{r Reconstruct Matrix}
-restr <- pca.res$x[,1:(params$n_features)] %*% t(pca.res$rotation[,1:(params$n_features)])
-restr <- scale(restr, center = -1 * pca.res$center, scale=FALSE)
+S<-diag(svd.res$d)
+S<-S[,1:params$n_features]
+V<-svd.res$v[,1:params$n_features]
+restr<-svd.res$u %*% S %*% t(VT) # U * S * V^T
+restr <- scale(restr, center = -1 * c_means, scale=FALSE)
 ```
 
-```{r plot reconstructed faces}
+These reconstructed faces can be plotted and compared to the original images.
+
+```{r plot reconstructed faces,echo=FALSE}
 par(mfrow = c( 2,4))
 par(mar = c(0, 0, 3, 0
                              ))
@@ -131,11 +179,9 @@ I have decided to use near-zero variance filtering to remove pixels with no or v
 
 I have modified the filtering to require only five percent of values to be unique, which translates into an allowance of nearly `r round(nrow(dat_TR)*.01)` permitted outliers. I imagine these as images which extend farther into the black space than most. The reasoning to do this is that some images feature larger hair or hat, which could be sparse, yet informative latent features.
 
-
-
 ```{r pre-processing data splitting}
 sel_class<-"sex"
-nzv<-nearZeroVar(dat_TR, uniqueCut = 1) # one percent of values must be unique
+nzv<-nearZeroVar(dat_TR, uniqueCut = 5) # one percent of values must be unique
 non_nzv<-seq(ncol(dat_TR))[-nzv]
 i<-rep(255,128*128)
 i[nzv]<-1
@@ -143,10 +189,11 @@ plotImage(i,"Pixels Filtered by NZV")
 
 training<-data.frame(Class=meta_TR[[sel_class]],dat_TR[,-nzv])
 test<-data.frame(Class=meta_T[[sel_class]],dat_T[,-nzv])
-preProcValues <- preProcess(training, method = c("center", "scale"))
+preProcValues <- preProcess(training, method = c("center"))
 trainTransformed <- predict(preProcValues, training)
 testTransformed<-predict(preProcValues, test)
 ```
+
 After pre-processing, the transformed training data generates four models. More information about each model can be found in the `caret` documentation. I chose these models to cover a variety of types: boosted, regression, ensemble, decision tree/rule-based, and regression. This panel is not exhaustive by any means.
 
 ```{r model generation,eval=FALSE}
@@ -182,12 +229,14 @@ rf_fit <- train(Class ~., data = trainTransformed, method = "xgbTree",
 
 ```{r get models,echo=FALSE,eval=TRUE}
 # The models have been generated with the generateModels.R script.
-load(file.path("models","sexclean_lift_models.Rdata"))
+load(file.path("models","sexlift_models.Rdata"))
 ```
 
-The models 
+## Variable Importance Figures
 
-```{r model analysis,message=FALSE}
+The models are then analyzed through `varImp` in `caret`. The plots show both how different classifiers use different numbers of features and how the models *see* the data. Intuitively, some of the models picked up on important variance around the eyes and the peripheries of the head.
+
+```{r model analysis,message=FALSE,echo=FALSE}
 plotVarImp<-function(model,title=NULL) {
 imp<-varImp(model,scale=TRUE)$importance
 imp<-cbind(imp,i=as.numeric(stringr::str_remove(rownames(imp),"X")))
@@ -209,7 +258,9 @@ plotVarImp(rf_fit,title="XGBoost Tree")
 plotVarImp(c5,title="C5.0")}
 ```
 
-```{r lift plots}
+## Lift Results and Plot
+
+```{r lift results and plots}
 lift_results <- data.frame(Class = testTransformed$Class)
 lift_results$FDA <- predict(fda, testTransformed, type = "prob")[,"female"]
 lift_results$XGB <- predict(rf_fit, testTransformed, type = "prob")[,"female"]
@@ -219,7 +270,9 @@ lift_obj <- lift(Class ~ FDA + XGB + C5.0+GLMB, data = lift_results)
 ggplot(lift_obj, values = 60)
 ```
 
-```{r confusion mats}
+## Test Set Confusion Matrices
+
+```{r confusion mats,echo=FALSE}
 p_results<-data.frame(Class=test$Class)
 p_results$FDA <- predict(fda, testTransformed)
 p_results$XGB <- predict(rf_fit, testTransformed)
@@ -261,7 +314,7 @@ kable(cMat_GLMB$table,"html") %>%
 <br>
 <br>
 <br>
-```{r performance stats}
+```{r performance stats, echo=FALSE}
 perf<-rbind(FDA=c(cMat_FDA$overall["Accuracy"],cMat_FDA$byClass[c(1,2,5,6,7,8,9,10,11)]),
                   XBG=c(cMat_XGB$overall["Accuracy"],cMat_XGB$byClass[c(1,2,5,6,7,8,9,10,11)]),
                         C5.0=c(cMat_C5.0$overall["Accuracy"],cMat_C5.0$byClass[c(1,2,5,6,7,8,9,10,11)]),

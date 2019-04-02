@@ -36,7 +36,6 @@ library(caret)
 library(doSNOW)
 dat<-importFaceMatrix()
 meta_TR<-importMetaMatrix("faces/faceDR")
-meta_T<-importMetaMatrix("faces/faceDS")
 meta_TR<-meta_TR[meta_TR$n %in% rownames(dat),] # Remove any examples from metadata that are not in the data.
 dat_TR<-dat[meta_TR$n,]
 rm(dat)
@@ -46,7 +45,7 @@ nzv<-nearZeroVar(dat_TR, uniqueCut = 5) # This may change
 sel_class<-"sex"
 training<-data.frame(Class=meta_TR[[sel_class]],dat_TR[,-nzv]) ### Only thing needed to change selected class
 ##
-preProcValues <- preProcess(training, method = c("center", "scale"))
+preProcValues <- preProcess(training, method = c("center"))
 trainTransformed <- predict(preProcValues, training)
 
 liftCtrl <- trainControl(method = "cv", classProbs = TRUE,
@@ -83,5 +82,5 @@ rf_fit <- train(Class ~., data = trainTransformed, method = "xgbTree",
                 tuneLength = 10,
                 metric='ROC')
 #confusionMatrix(data = preds, reference = testTransformed$Class)
-save.image(file.path("models",paste0(sel_class,"lift_models.Rdata")))
+save.image(file.path("models",paste0(sel_class,"liftcent_models.Rdata")))
 stopCluster(cl)
