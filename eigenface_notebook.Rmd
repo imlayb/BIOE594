@@ -4,8 +4,8 @@ params:
   n_features: 1000
 bibliography: eigenfaces.bib
 output:
-  html_document: default
   html_notebook: default
+  html_document: default
 ---
 ```{r required packages,message=FALSE,warning=FALSE}
 source("eigenfaces.R")
@@ -80,16 +80,14 @@ plotImage(colMeans(dat_TR[meta_TR[meta_TR$sex=="male",]$n,]),"Average Male Face"
 foo()
 ```
 
-## Eigen faces
+## SVD and Eigenfaces
 
 ```{r load svd,echo=FALSE}
+# SVD calculation takes a long time
 load(file.path("models","svd.Rdata"))
 c_means<-colMeans(dat_TR)
 c_dat_TR<-scale(dat_TR, center = 1 * c_means, scale=FALSE)
 ```
-
-
-## SVD and Eigenfaces
 
 ```{r SVD,eval=FALSE}
 c_means<-colMeans(dat_TR)
@@ -142,13 +140,6 @@ restr<-svd.res$u %*% Ss %*% t(V) # U * S * V^T
 restr <- scale(restr, center = -1 * c_means, scale=FALSE)
 ```
 
-```{r Reconstruct one,eval=FALSE}
-Sss<-S[,10]
-V<-svd.res$v[,1:params$n_features]
-gx<-svd.res$u[,] %*% Sss %*% t(V) # U * S * V^T
-gx <- scale(restr, center = -1 * c_means, scale=FALSE)
-```
-
 These reconstructed faces can be plotted and compared to the original images.
 
 ```{r plot reconstructed faces,echo=FALSE}
@@ -159,7 +150,49 @@ for(i in sample(seq(nrow(dat_TR)),8)) {
   plotImage(dat_TR[i,],meta_TR[i,]$n)
   plotImage(restr[i,],paste0(meta_TR[i,]$n,"R"))
 }
+rm(restr)
 ```
+
+
+Moreover, we can see how adding additional bases for a reconstruction iteratively improves the image quality.
+
+```{r Reconstruct slow,eval=FALSE}
+sel<-sample(1:nrow(dat_TR),size = 3)
+for (nul in seq(1,70)) {
+  if (nul < 10) {name = paste('000',nul,'plot.jpg',sep='')}
+  if (nul < 100 && nul >= 10) {name = paste('00',nul,'plot.jpg', sep='')}
+  if (nul >= 100) {name = paste('0', nul,'plot.jpg', sep='')}
+i<-nul*1
+Sss<-S[,1:i]
+V<-svd.res$v[,1:i]
+gx<-svd.res$u[sel,] %*% Sss %*% t(V) # U * S * V^T
+gx <- scale(gx, center = -1 * c_means, scale=FALSE)
+png(file.path("images","slow",name))
+par()
+plotImage(gx[1,],title = i)
+dev.off()
+}
+sel<-sample(1:nrow(dat_TR),size = 3)
+for (nul in seq(1,60)) {
+  if (nul < 10) {name = paste('000',nul,'plot.jpg',sep='')}
+  if (nul < 100 && nul >= 10) {name = paste('00',nul,'plot.jpg', sep='')}
+  if (nul >= 100) {name = paste('0', nul,'plot.jpg', sep='')}
+i<-nul*15
+Sss<-S[,1:i]
+V<-svd.res$v[,1:i]
+gx<-svd.res$u[sel,] %*% Sss %*% t(V) # U * S * V^T
+gx <- scale(gx, center = -1 * c_means, scale=FALSE)
+png(file.path("images","fast",name))
+par()
+plotImage(gx[1,],title = i)
+dev.off()
+}
+system("convert -delay 15 -loop 0 images/slow/*.jpg images/slow/c.gif")
+system("convert -delay 15 -loop 0 images/fast/*.jpg images/fast/c.gif")
+```
+
+![iterative improvement](images/slow/c.gif)
+![fast iterative improvement](images/fast/c.gif)
 
 # ML with Caret
 
@@ -223,7 +256,7 @@ rf_fit <- train(Class ~., data = trainTransformed, method = "xgbTree",
 
 ```{r get models,echo=FALSE,eval=TRUE}
 # The models have been generated with the generateModels.R script.
-load(file.path("models","sexlift_models.Rdata"))
+load(file.path("models","sexliftcent_models.Rdata"))
 ```
 
 ## Variable Importance Figures
