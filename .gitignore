@@ -6,3 +6,7 @@ eigenface_notebook_files/
 models/
 nohup.out
 cp.sh
+presentation-cache/
+presentation-figures/
+presentation.md
+final_presentation_files/

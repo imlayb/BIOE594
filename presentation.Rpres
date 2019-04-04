@@ -1,0 +1,424 @@
+Eigenface Exploration
+========================================================
+author: Ben Imlay
+date: 4/4/2019
+autosize: true
+
+
+```{r setup, include=FALSE}
+opts_chunk$set(cache=TRUE)
+```
+
+```{r required packages,echo=FALSE,message=FALSE,warning=FALSE}
+source("eigenfaces.R")
+library(plyr)
+library(knitr)
+library(kableExtra)
+library(ggplot2)
+library(gridExtra)
+library(factoextra)
+library(caret)
+dat<-importFaceMatrix()
+mytheme <- gridExtra::ttheme_default(
+    core = list(fg_params=list(cex = 2.0)),
+    colhead = list(fg_params=list(cex = 1.0)),
+    rowhead = list(fg_params=list(cex = 1.0)))
+```
+
+Git Repository
+========================================================
+
+A [Github repository](https://github.com/imlayb/R-EigenFaces) accompanying this presentation contains all of the code needed to run this analysis.
+ - Import the binary images.
+ - Display the binary images.
+ - Import the convoluted metadata files.
+ 
+***
+<font size="2">
+```{r example code, eval=FALSE}
+importMetaMatrix <- function(file, verbose = FALSE) {
+  x <- read.csv(file, header = FALSE, sep = "(")
+  x <- x[, -6]
+  features <- c("n", "sex", "age", "race", "face", "prop")
+  names(x) <- features
+  for (f in features[-6]) {
+    x[[f]] <- str_remove(x[[f]], "_[:alpha:]+[:blank:]")
+    x[[f]] <- str_remove(x[[f]], "\\)")
+    x[[f]]<-str_trim(x[[f]],side = "both")
+  }
+  x$prop <- str_extract(x$prop, "[:alpha:]+|[:alpha:]+\\s[:alpha:]")
+  before <- nrow(x)
+  complete_sample <- x$sex != "descriptor"
+  x <- x[complete_sample, ]
+  after <- nrow(x)
+  if (verbose) {
+    message(
+      sprintf(
+        "Imported metadata for %d samples from file: \"%s\".\nRemoved %d samples without metadata.",
+        nrow(x),
+        file,
+        before - after
+      )
+    )
+  }
+  return(x)
+}
+```
+</font>
+
+Introduction
+========================================================
+
+1991 article *Eigenfaces for Recognition* was formative for the multimedia research fields (Turk 1991). The MIT Faces Recognition Project database has become a benchmark for computer vision and machine learning.
+
+Data consists of 3993 pictures of human faces → 128 x 128 in 8-bit grayscale. Data from [MIT](http://courses.media.mit.edu/2004fall/mas622j/04.projects/faces/).
+ - Format enables treatment of each image as a $128^2$ vector.
+ 
+***
+
+```{r example image,echo=FALSE}
+plotImage(dat[2115,],"2115")
+```
+
+Importing Data
+========================================================
+
+`importFaceMatrix` and `importMetaMatrix` can be used to create the data matrix and the metadata table.
+
+ - Training set → 1989 faces; test set → 1980 observations. 
+ - Pruned images without information or metadata.
+
+Images are centered and mostly direct, but there are many exceptions.
+
+***
+
+```{r example image2,echo=FALSE}
+plotImage(dat["4124",],"4124")
+```
+
+```{r meta import,message=FALSE,warning=FALSE,include=FALSE}
+dat<-importFaceMatrix()
+meta_TR<-importMetaMatrix("faces/faceDR")
+meta_T<-importMetaMatrix("faces/faceDS")
+meta_TR<-meta_TR[meta_TR$n %in% rownames(dat),] # Remove any examples from metadata that are not in the data.
+meta_T<-meta_T[meta_T$n %in% rownames(dat),]
+dat_TR<-dat[meta_TR$n,]
+dat_T<-dat[meta_T$n,]
+rm(dat)
+```
+
+Exploring the Data
+========================================================
+
+```{r metadata barplot,echo=FALSE,fig.height=10,fig.width=18,fig.align='center'}
+foo<-function() {p1<-qplot(sex,data=meta_TR)+ggtitle("Sex")+coord_flip()+theme_classic()
+p2<-qplot(age,data=meta_TR)+ggtitle("Age")+coord_flip()+theme_classic()
+p3<-qplot(race,data=meta_TR)+ggtitle("Race")+coord_flip()+theme_classic()
+p4<-qplot(face,data=meta_TR)+ggtitle("Face")+coord_flip()+theme_classic()
+p5<-qplot(prop,data=meta_TR)+ggtitle("Prop")+coord_flip()+theme_classic()
+grid.arrange(p1,p2,p3,p4,p5,tableGrob(count(meta_TR[,2:3]),rows=NULL),ncol=3,top="Exploratory Data Analysis")}
+foo()
+```
+
+Objectives
+========================================================
+
+- Creation and exploration of Eigenimages.
+- Various mainstream ML models.
+  - Sex is the most balanced class.
+    
+***
+
+```{r, echo=FALSE}
+qplot(sex,data=meta_TR)+ggtitle("Sex")+coord_flip()+theme_classic()
+```
+
+Centering
+======================================================
+
+The average face is computed by taking the average of each column across all of the training data. This vector is important for centering each pixel for subsequent decomposition.
+
+```{r average face calc}
+c_means = colMeans(dat_TR)
+c_dat_TR<-scale(dat_TR, center = 1 * c_means, scale=FALSE)
+```
+
+Average Faces
+=====================================================
+
+```{r cmeans,echo=FALSE,fig.height=17,fig.width=20,fig.align='center'}
+par(mfrow=c(2,2))
+foo<-function() {
+plotImage(c_means,"Average Face")
+plotImage(colMeans(dat_TR[meta_TR[meta_TR$sex=="female",]$n,]),"Average Female Face")
+plotImage(colMeans(dat_TR[meta_TR[meta_TR$sex=="male",]$n,]),"Average Male Face")
+plotImage(colMeans(dat_TR[meta_TR[meta_TR$age=="senior",]$n,]),"Average Senior Face")}
+foo()
+```
+
+SVD
+===================================================
+
+```{r load svd,echo=FALSE}
+# SVD calculation takes a long time
+load(file.path("models","svd.Rdata"))
+```
+
+SVD is a decomposition method that is applicable for any matrix, and is defined by the following equation:
+
+$$A=USV^T$$
+
+In R, `svd()` produces `u`, which represents $U$; `d`. which is a vector for $S$; `v`, which represents $V$.
+
+```{r SVD,eval=FALSE}
+c_dat_TR<-scale(dat_TR, center = 1 * c_means, scale=FALSE) # Centers each pixel.
+svd.res<-svd(c_dat_TR)
+```
+
+Analysis of Eigen Values
+=====================================================
+
+The proportion of explained variance computed as <br> `svd.res$d^2/sum(svd.res$d^2)`
+
+```{r SVD diagnostics,fig.height=12,fig.width=15,echo=FALSE}
+foo2<-function(d) {
+  x<-data.frame(ith_Eig=1:d,
+                Proportion = round(svd.res$d^2/sum(svd.res$d^2),3)[1:d],
+                Cumulative = round(cumsum(svd.res$d^2)/sum(svd.res$d^2),3)[1:d])
+  return(x)
+}
+x<-foo2(100)
+p1<-ggplot(data=x[1:5,])+
+  geom_line(aes(x=ith_Eig,y=Proportion),linetype='dashed')+
+  geom_point(aes(x=ith_Eig,y=Proportion))+
+  geom_label(aes(x=ith_Eig,y=Proportion,label=Proportion),nudge_x = .5,nudge_y = .005)+
+  theme_classic()+ggtitle("Proportion of Variance Explained")
+p2<-tableGrob(x[1:20,c(2,3)],theme=mytheme)
+grid.arrange(p1,p2,ncol=2)
+```
+
+Eigen Faces
+==================================================
+
+Eigenfaces are created from $V_{d,k}$
+  - $k$ is the number of desired eigenfaces. 
+  - In R, `t(svd.res$v[,1:k])`, where each columns is an eigenvector.
+
+```{r plot eigen faces,fig.height=9,fig.width=15,echo=FALSE}
+par(mfrow = c(2, 5))
+par(oma = rep(2, 4), mar = c(0, 0, 3, 0))
+for(i in seq(1:10)) {
+  plotImage(t(svd.res$v[,i]),paste0(i))
+}
+```
+
+Reconstruct Faces
+==================================================
+
+SVD can be used to make low-rank approximations of points within the original matrix.
+ - Reconstruct the original matrix using a given number of bases, $k$.
+  - `k<-100`
+  - $U_k\cdot S_k\cdot  V^T$
+ 
+```{r reconstructing matrix}
+k<-100
+S<-diag(svd.res$d)
+Ss<-S[,1:k]
+V<-svd.res$v[,1:k]
+restr<-svd.res$u %*% Ss %*% t(V)
+restr <- scale(restr, center = -1 * c_means, scale=FALSE) # uncenter
+```
+
+Reconstructed Faces
+================================================
+
+
+```{r reconst faces,fig.width=19,fig.height=7.5,echo=FALSE}
+par(mfrow = c( 2,4))
+par(mar = c(0, 0, 3, 0
+                             ))
+for(i in sample(seq(nrow(dat_TR)),8)) {
+  plotImage(dat_TR[i,],meta_TR[i,]$n)
+  plotImage(restr[i,],paste0(meta_TR[i,]$n,"R"))
+}
+#rm(restr)
+```
+
+
+Iterative Improvement
+================================================
+
+![](images/fast/c.gif)
+
+***
+
+![](images/slow/c.gif)
+
+ML with Caret
+=================================================
+
+`caret` enables modular deployment of ML.
+
+Preprocessing
+ - Variance filtering → five percent of values must be unique.
+ - Centering
+
+```{r pre-processing data splitting,fig.height=6,fig.width=7}
+sel_class<-"sex"
+nzv<-nearZeroVar(dat_TR, uniqueCut = 5)
+training<-data.frame(Class=meta_TR[[sel_class]],dat_TR[,-nzv])
+test<-data.frame(Class=meta_T[[sel_class]],dat_T[,-nzv])
+preProcValues <- preProcess(training, method = c("center"))
+trainTransformed <- predict(preProcValues, training)
+testTransformed<-predict(preProcValues, test)
+```
+
+Variance Filtering Results
+====================================================
+
+```{r nzv image,echo=FALSE}
+non_nzv<-seq(ncol(dat_TR))[-nzv]
+i<-rep(255,128*128)
+i[nzv]<-1
+plotImage(i,"Pixels Filtered by NZV")
+```
+
+Model Creation
+=====================================================
+<font size="5">
+```{r model generation,eval=FALSE}
+liftCtrl <- trainControl(method = "cv", classProbs = TRUE,
+                     summaryFunction = twoClassSummary)
+c5 <- train(Class ~ ., data = trainTransformed,
+                 method = "C5.0", metric = "ROC",
+                 tuneLength = 10,
+                 trControl = liftCtrl,
+                 control = C50::C5.0Control(earlyStopping = FALSE))
+fda<- train(Class ~ ., data = trainTransformed,
+                  method = "fda", metric = "ROC",
+                  tuneLength = 20,
+                  trControl = liftCtrl)
+glmBoost_grid = expand.grid(mstop = c(50, 100, 150, 200, 250, 300),
+                           prune = c('yes', 'no'))
+glmboost<-train(Class~.,data=trainTransformed,
+                method="glmboost",metric='ROC',
+                trControl=liftCtrl,tuneGrid=glmBoost_grid)
+XGB_grid <- expand.grid(nrounds=c(100,200,300,400), 
+                         max_depth = c(3:7),
+                         eta = c(0.05, 1),
+                         gamma = c(0.01),
+                         colsample_bytree = c(0.75),
+                         subsample = c(0.50),
+                         min_child_weight = c(0))
+rf_fit <- train(Class ~., data = trainTransformed, method = "xgbTree",
+                trControl=liftCtrl,
+                tuneGrid = XGB_grid,
+                tuneLength = 10,
+                metric='ROC')
+```
+</font>
+```{r get models,echo=FALSE,eval=TRUE}
+# The models have been generated with the generateModels.R script.
+load(file.path("models","sexliftcent_models.Rdata"))
+```
+
+Variable Importance
+=====================================================
+
+```{r model analysis,message=FALSE,echo=FALSE}
+plotVarImp<-function(model,title=NULL) {
+imp<-varImp(model,scale=TRUE)$importance
+imp<-cbind(imp,i=as.numeric(stringr::str_remove(rownames(imp),"X")))
+imp<-imp[order(imp$i),]
+i<-rep(0,128*128)
+i[non_nzv]<-imp$Overall
+d <- matrix(i, nrow = sqrt(length(i)))
+image(
+    d[, nrow(d):1],
+    col = viridis::viridis(500),
+    axes = FALSE,
+    main=paste0("varImp ",ifelse(is.null(title),yes = "",no = title)))
+}
+```
+
+```{r varImp,fig.height=12,fig.width=24,echo=FALSE}
+par(mfrow = c( 1,2))
+par(mar = c(0, 0, 3, 0))
+{plotVarImp(fda,title="FDA")
+plotVarImp(glmboost,title="GLM Boost")}
+```
+
+
+Variable Importance Cont.
+==========================================================
+
+```{r varImp images cont,fig.height=12,fig.width=24,echo=FALSE}
+par(mfrow=c(1,2))
+par(mar = c(0, 0, 3, 0))
+{plotVarImp(rf_fit,title="XGBoost Tree")
+plotVarImp(c5,title="C5.0")}
+```
+
+Lift Results
+=========================================================
+Cumulative gains plot<br>
+```{r lift results and plots,echo=FALSE}
+lift_results <- data.frame(Class = testTransformed$Class)
+lift_results$FDA <- predict(fda, testTransformed, type = "prob")[,"female"]
+lift_results$XGB <- predict(rf_fit, testTransformed, type = "prob")[,"female"]
+lift_results$C5.0 <- predict(c5, testTransformed, type = "prob")[,"female"]
+lift_results$GLMB <- predict(glmboost, testTransformed, type = "prob")[,"female"]
+lift_obj <- lift(Class ~ FDA + XGB + C5.0 + GLMB, data = lift_results)
+ggplot(lift_obj, values = 60)
+```
+
+Confusion Matrices
+=========================================================
+
+```{r confusion mats,echo=FALSE}
+p_results<-data.frame(Class=test$Class)
+p_results$FDA <- predict(fda, testTransformed)
+p_results$XGB <- predict(rf_fit, testTransformed)
+p_results$C5.0 <- predict(c5, testTransformed)
+p_results$GLMB <- predict(glmboost, testTransformed)
+cMat_FDA<-confusionMatrix(data = p_results$FDA, reference = p_results$Class)
+cMat_XGB<-confusionMatrix(data = p_results$XGB, reference = p_results$Class)
+cMat_C5.0<-confusionMatrix(data = p_results$C5.0, reference = p_results$Class)
+cMat_GLMB<-confusionMatrix(data = p_results$GLMB, reference = p_results$Class)
+```
+
+```{r tables,echo=FALSE}
+kable(cMat_FDA$table,"html") %>% 
+  kable_styling(bootstrap_options = "striped", full_width = F,position="float_left") %>% 
+    add_header_above(c("Pred.","Ref."= 2)) %>%
+      add_header_above(c("FDA"= 3))
+kable(cMat_XGB$table,"html") %>% 
+  kable_styling(bootstrap_options = "striped", full_width = F,position="float_left") %>% 
+    add_header_above(c("Pred.","Ref."= 2)) %>%
+      add_header_above(c("XGBoost"= 3))
+kable(cMat_C5.0$table,"html") %>% 
+  kable_styling(bootstrap_options = "striped", full_width = F,position="float_left") %>% 
+    add_header_above(c("Pred.","Ref."= 2)) %>%
+      add_header_above(c("C5.0"= 3))
+kable(cMat_GLMB$table,"html") %>% 
+  kable_styling(bootstrap_options = "striped", full_width = F,position="float_left") %>% 
+    add_header_above(c("Pred.","Ref."= 2)) %>%
+      add_header_above(c("GLMBoost"= 3))
+```
+
+Performance Metrics
+===========================================================
+
+```{r performance stats, echo=FALSE}
+perf<-rbind(FDA=c(cMat_FDA$overall["Accuracy"],cMat_FDA$byClass[c(1,2,5,6,7,8,9,10,11)]),
+                  XBG=c(cMat_XGB$overall["Accuracy"],cMat_XGB$byClass[c(1,2,5,6,7,8,9,10,11)]),
+                        C5.0=c(cMat_C5.0$overall["Accuracy"],cMat_C5.0$byClass[c(1,2,5,6,7,8,9,10,11)]),
+                              GMLBoost=c(cMat_GLMB$overall["Accuracy"],cMat_GLMB$byClass[c(1,2,5,6,7,8,9,10,11)]))
+kable(perf,"html") %>% 
+  kable_styling(bootstrap_options = "striped", full_width = F)
+```
+
+
+
+
+
