@@ -7,6 +7,6 @@ models/
 nohup.out
 cp.sh
 presentation-cache/
-presentation-figures/
+presentation-figure/
 presentation.md
 final_presentation_files/
