@@ -4,8 +4,8 @@ params:
   n_features: 1000
 bibliography: eigenfaces.bib
 output:
-  html_document: default
   html_notebook: default
+  html_document: default
 ---
 ```{r required packages,message=FALSE,warning=FALSE}
 source("eigenfaces.R")
@@ -13,18 +13,26 @@ library(plyr)
 library(knitr)
 library(kableExtra)
 library(ggplot2)
+library(ggfortify)
 library(gridExtra)
 library(factoextra)
 library(caret)
 ```
 
-## Introduction
+# Introduction
+
+### Face Data
 
 The 1991 article *Eigenfaces for Recognition* was formative for the multimedia research fields [@Turk1991]. The MIT Faces Recognition Project database, which predates the *Eigenfaces for Recognition* article, has since become a benchmark for computer vision and machine learning.
 
 
 The data consists of 3993 pictures of human faces at a resolution of 128 x 128 in 8-bit grayscale. Data can be obtained from [MIT](http://courses.media.mit.edu/2004fall/mas622j/04.projects/faces/).
 
+### Objective
+
+My objective was two-fold, a data science exploration of dimension reduction in the context of face images and a classification of an image metafeature such as gender using the image itself.
+
+# Methods
 
 ## Data Import
 The eigenface rawdata is packaged with this repository and can be loaded with the following code. Two pictures were remove from the rawdata as provided from MIT because they were of incorrect dimensions: 2416 and 2412. Moreover, 22 faces are removed for having no parsed information.
@@ -34,7 +42,7 @@ source("eigenfaces.R")
 dat<-importFaceMatrix()
 ```
 
-Each picture is represented as vector of length 128^2^=16,384. This vector can be reshaped into a raster, which can be colored with a color scale — grayscale in our case. Three random faces have been generated below.
+Each picture is represented as vector of length $128^{2}=16,384$. This vector can be reshaped into a raster, which can be colored with a color scale — grayscale in our case. Three random faces have been generated below.
 
 ```{r plot images,fig.height=3,fig.width=9,collapse=TRUE,results= 'hold'}
 #This code may be run multiple times to see the huge diversity of images in the data.
@@ -45,21 +53,35 @@ plotImage(dat[selected[2],],selected[2])
 plotImage(dat[selected[3],],selected[3])}
 ```
 
-## Metadata Import
+## Metadata Import and Train/Test Set Splitting
 
-The metadata comes from MIT already split into two sets, training and testing.
+The metadata comes from MIT already split into two sets, training and testing. However, there are compositional biases between the two sets. Therefore, the sets will be combined and split later using a true random split.
 
 ```{r meta import,message=FALSE,warning=FALSE,include=TRUE}
 meta_TR<-importMetaMatrix("faces/faceDR")
 meta_T<-importMetaMatrix("faces/faceDS")
 meta_TR<-meta_TR[meta_TR$n %in% rownames(dat),] # Remove any examples from metadata that are not in the data.
 meta_T<-meta_T[meta_T$n %in% rownames(dat),]
-dat_TR<-dat[meta_TR$n,]
-dat_T<-dat[meta_T$n,]
-rm(dat)
+meta<-rbind(meta_TR,meta_T)
+rownames(meta)<-meta$n
+meta<-meta[rownames(dat),]
+#rm(dat)
+```
+
+```{r train test split}
+set.seed(1234)
+trainIndex <- createDataPartition(meta$sex, p = .8, 
+                                  list = FALSE, 
+                                  times = 1)
+meta_TR<-meta[trainIndex,]
+meta_T<-meta[-trainIndex,]
+dat_TR<-dat[trainIndex,]
+dat_T<-dat[-trainIndex,]
 ```
 
 The training set consists of `r nrow(dat_TR)` faces, and the test set consists `r nrow(dat_T)` observations. There are a handful of entries in the data that are not contained in the meta. And there are numerous images which do not contain any information. Both have been removed.
+
+## Metadata EDA
 
 ```{r metadata barplot,echo=FALSE,fig.height=6,fig.width=9,fig.align='center'}
 foo<-function() {p1<-qplot(sex,data=meta_TR)+ggtitle("Sex")+coord_flip()+theme_classic()
@@ -70,6 +92,10 @@ p5<-qplot(prop,data=meta_TR)+ggtitle("Prop")+coord_flip()+theme_classic()
 grid.arrange(p1,p2,p3,p4,p5,tableGrob(count(meta_TR[,2:3]),rows=NULL),ncol=3,top="Exploratory Data Analysis")}
 foo()
 ```
+
+### EDA Takeaways
+
+Each of the available metadata fields are highly biased. Most pictures are of white, adult, male subjects. The two largest groups are adult females and adult males. Given that, I will only consider white adults. This significantly limits the scope of any successful classifiers based on this data; it would not be generalizable to the population at large.
 
 ## Average faces
 
@@ -99,16 +125,23 @@ load(file.path("models","svd.Rdata"))
 ```
 
 ```{r SVD,eval=FALSE}
+### REQUIRED ON FIRST RUN
 c_means<-colMeans(dat_TR)
 c_dat_TR<-scale(dat_TR, center = 1 * c_means, scale=FALSE) # Centers each pixel.
 svd.res<-svd(c_dat_TR)
+save(list = c("svd.res"),file = file.path("models","svd.Rdata"))
 ```
+
 
 SVD is a decomposition method that is applicable for any matrix, and is defined by the following equation:
 
 $$A=USV^T$$
 
 In R, `svd()` produces `u`, which represents $U$; `d`. which is a vector for $S$; `v`, which represents $V^T$.
+
+## SVD Dimension Reduction Results
+
+The following graphics exhibit
 
 ```{r SVD diagnostics,fig.height=7,fig.width=10,echo=FALSE}
 foo2<-function(d) {
@@ -148,6 +181,7 @@ V<-svd.res$v[,1:params$n_features]
 restr<-svd.res$u %*% Ss %*% t(V) # U * S * V^T
 restr <- scale(restr, center = -1 * c_means, scale=FALSE)
 ```
+
 
 These reconstructed faces can be plotted and compared to the original images.
 
@@ -206,6 +240,8 @@ system("convert -delay 15 -loop 0 images/fast/*.jpg images/fast/c.gif")
 # ML with Caret
 
 Max Kuhn's `caret` package offers a modular framework for the preparation and deployment of numerous ML models. The `caret` system is intuitive and well [documented](https://topepo.github.io/caret/index.html).
+
+## NZV pre-processing
 
 I have decided to use near-zero variance filtering to remove pixels with no or very little variance. I.e., pixels that are almost always black. All models deal with uninformative variables in some way--sometimes poorly. Removing them outright during pre-processing avoids that altogether while also reducing the computational burden. As per the `caret` documentation:
 
@@ -268,7 +304,7 @@ rf_fit <- train(Class ~., data = trainTransformed, method = "xgbTree",
 load(file.path("models","sexliftcent_models.Rdata"))
 ```
 
-## Variable Importance Figures
+### NZV-based Variable Importance Figures
 
 The models are then analyzed through `varImp` in `caret`. The plots show both how different classifiers use different numbers of features and how the models *see* the data. Intuitively, some of the models picked up on important variance around the eyes and the peripheries of the head.
 
@@ -294,7 +330,7 @@ plotVarImp(rf_fit,title="XGBoost Tree")
 plotVarImp(c5,title="C5.0")}
 ```
 
-## Lift Results and Plot
+### NZV-based Lift Results and Plot
 
 ```{r lift results and plots}
 lift_results <- data.frame(Class = testTransformed$Class)
@@ -306,7 +342,7 @@ lift_obj <- lift(Class ~ FDA + XGB + C5.0+GLMB, data = lift_results)
 ggplot(lift_obj, values = 60)
 ```
 
-## Test Set Confusion Matrices
+### NZV-based Test Set Confusion Matrices
 
 ```{r confusion mats,echo=FALSE}
 p_results<-data.frame(Class=test$Class)
@@ -350,6 +386,9 @@ kable(cMat_GLMB$table,"html") %>%
 <br>
 <br>
 <br>
+
+### NZV-based Accuracy Metrics Table
+
 ```{r performance stats, echo=FALSE}
 perf<-rbind(FDA=c(cMat_FDA$overall["Accuracy"],cMat_FDA$byClass[c(1,2,5,6,7,8,9,10,11)]),
                   XBG=c(cMat_XGB$overall["Accuracy"],cMat_XGB$byClass[c(1,2,5,6,7,8,9,10,11)]),
@@ -358,6 +397,111 @@ perf<-rbind(FDA=c(cMat_FDA$overall["Accuracy"],cMat_FDA$byClass[c(1,2,5,6,7,8,9,
 kable(perf,"html") %>% 
   kable_styling(bootstrap_options = "striped", full_width = F)
 ```
+
+## Principal Component Pre-processing
+
+Since using a cropped face vector did not yield great results, my second approach will be to use each images projections in the first 100 principal compenents as features. I will still remove NZV pixels to enable scaling of each pixel feature.
+
+```{r PCA, eval=F}
+### REQUIRED ON FIRST RUN
+pca.res<-prcomp(dat_TR[,-nzv],center=T,scale. = T,rank. = 100)
+save(list = c("pca.res"),file = file.path("models","prcomp.Rdata"))
+```
+
+```{r load prcomp,echo=F}
+load(file.path("models","prcomp.Rdata"))
+pca.ind <- pca.res$x
+```
+
+### PCA Pre-processing
+
+```{r PCA pre-processing}
+##
+sel_class<-"sex"
+training<-data.frame(Class=meta_TR[[sel_class]],pca.res$x) ### Only thing needed to change selected class
+##
+preProcValues <- preProcess(training, method = c("center","scale"))
+trainTransformed <- predict(preProcValues, training)
+test_PCA<- predict(pca.res, newdata = dat_T[,-nzv])
+testTransformed<-predict(preProcValues, test_PCA)
+```
+
+The script used for generating the models is nearly identical to the script used for the NZV pre-processed run.
+
+```{r get PCA models,echo=FALSE,eval=TRUE}
+# The models have been generated with the generateModels.R script.
+load(file.path("models","sex_PCA_liftcent_models.Rdata"))
+```
+
+### PCA Lift Results and Plot
+
+```{r PCA lift results and plots}
+lift_results <- data.frame(Class = testTransformed$Class)
+lift_results$FDA <- predict(fda, testTransformed, type = "prob")[,"female"]
+lift_results$XGB <- predict(rf_fit, testTransformed, type = "prob")[,"female"]
+lift_results$C5.0 <- predict(c5, testTransformed, type = "prob")[,"female"]
+lift_results$GLMB <- predict(glmboost, testTransformed, type = "prob")[,"female"]
+lift_obj <- lift(Class ~ FDA + XGB + C5.0+GLMB, data = lift_results)
+ggplot(lift_obj, values = 60)
+```
+
+### PCA Confusion Mats
+
+```{r PCA confusion mats,echo=FALSE}
+p_results<-data.frame(Class=test$Class)
+p_results$FDA <- predict(fda, testTransformed)
+p_results$XGB <- predict(rf_fit, testTransformed)
+p_results$C5.0 <- predict(c5, testTransformed)
+p_results$GLMB <- predict(glmboost, testTransformed)
+cMat_FDA<-confusionMatrix(data = p_results$FDA, reference = p_results$Class)
+cMat_XGB<-confusionMatrix(data = p_results$XGB, reference = p_results$Class)
+cMat_C5.0<-confusionMatrix(data = p_results$C5.0, reference = p_results$Class)
+cMat_GLMB<-confusionMatrix(data = p_results$GLMB, reference = p_results$Class)
+```
+
+```{r PCA tables,echo=FALSE}
+kable(cMat_FDA$table,"html") %>% 
+  kable_styling(bootstrap_options = "striped", full_width = F,position="float_left") %>% 
+    add_header_above(c("Pred.","Ref."= 2)) %>%
+      add_header_above(c("FDA"= 3))
+kable(cMat_XGB$table,"html") %>% 
+  kable_styling(bootstrap_options = "striped", full_width = F,position="float_left") %>% 
+    add_header_above(c("Pred.","Ref."= 2)) %>%
+      add_header_above(c("XGBoost"= 3))
+kable(cMat_C5.0$table,"html") %>% 
+  kable_styling(bootstrap_options = "striped", full_width = F,position="float_left") %>% 
+    add_header_above(c("Pred.","Ref."= 2)) %>%
+      add_header_above(c("C5.0"= 3))
+kable(cMat_GLMB$table,"html") %>% 
+  kable_styling(bootstrap_options = "striped", full_width = F,position="float_left") %>% 
+    add_header_above(c("Pred.","Ref."= 2)) %>%
+      add_header_above(c("GLMBoost"= 3))
+```
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+
+### PCA Accuracy Metrics Table
+
+```{r PCA performance stats, echo=FALSE}
+perf<-rbind(FDA=c(cMat_FDA$overall["Accuracy"],cMat_FDA$byClass[c(1,2,5,6,7,8,9,10,11)]),
+                  XBG=c(cMat_XGB$overall["Accuracy"],cMat_XGB$byClass[c(1,2,5,6,7,8,9,10,11)]),
+                        C5.0=c(cMat_C5.0$overall["Accuracy"],cMat_C5.0$byClass[c(1,2,5,6,7,8,9,10,11)]),
+                              GMLBoost=c(cMat_GLMB$overall["Accuracy"],cMat_GLMB$byClass[c(1,2,5,6,7,8,9,10,11)]))
+kable(perf,"html") %>% 
+  kable_styling(bootstrap_options = "striped", full_width = F)
+```
+
+# Microsoft Azure Face Landmark Detection and Eigenface Reannotation
 
 
 
