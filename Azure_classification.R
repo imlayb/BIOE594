@@ -1,14 +1,12 @@
 #!/usr/bin/env Rscript
+## This script simply polls the Cognitive Services API in Azure and collects responses into a list, which it saves as an Robject.
 library(httr)
-library(pROC)
 library(doSNOW)
-library(iterators)
 library(foreach)
-library(raster)
 library(jsonlite)
 library(stringr)
 source("eigenfaces.R")
-### Load all images as vectors ------------------------------------------------------
+### Load all images as vectors / Specific to Eigenfaces use case ------------------------------------------------------
 dat<-importFaceMatrix()
 meta_TR<-importMetaMatrix("faces/faceDR")
 meta_T<-importMetaMatrix("faces/faceDS")
@@ -18,7 +16,7 @@ meta<-rbind(meta_TR,meta_T)
 rownames(meta)<-meta$n
 meta<-meta[rownames(dat),]
 
-### Convert all images to jpeg ------------------------------------
+### Convert all images to jpeg / Specific to Eigenfaces use case ------------------------------------
 outputImages<-function(dat,color_scale=gray.colors(
   256,
   start = 0.3,
@@ -49,14 +47,14 @@ outputImages<-function(dat,color_scale=gray.colors(
 dir.create(path = "jpeg_images",showWarnings = F)
 outputImages(dat)
 
-### Prepare API ---------------------------------
+### Prepare API / General to any use case ---------------------------------
 
 keys<-fromJSON("api-keys/keys") # JSON with name,key1,key2 from AZURE
 AZURE_URL="https://centralus.api.cognitive.microsoft.com/face/v1.0/detect"
 QUERY="?returnFaceId=true&returnFaceLandmarks=true&returnFaceAttributes=age,gender,smile,facialHair,glasses,emotion,accessories&recognitionModel=recognition_02"
 F_URL<-paste0(AZURE_URL,QUERY)
 
-### POST to API and collect results -----------------------------------------------
+### POST to API and collect results / General to any use case -----------------------------------------------
 
 getAzure<-function(image_dir,delay_interval=3.1,image_type="jpeg",n=F,debug=F) {
   file_list<-Sys.glob(file.path(image_dir,paste0("*.",image_type)))
@@ -75,5 +73,4 @@ getAzure<-function(image_dir,delay_interval=3.1,image_type="jpeg",n=F,debug=F) {
   return(results_list)
 }
 azure_list<-getAzure("jpeg_images",debug=T)
-#data.table::fwrite(azure_df,file = "AZURE_results.tsv",sep = "\t",row.names = T,col.names = T)
 save(list=c("azure_list"),file = file.path("models","Azure_results.Rdata"))
