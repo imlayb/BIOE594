@@ -175,9 +175,9 @@ for(i in seq(1:10)) {
 SVD can be used to make low-rank approximations of points within the original matrix. In our case, we can reconstruct the original matrix using `r params$n_features` features, which is specified as a parameter in this document.
 
 ```{r Reconstruct Matrix}
-S<-diag(svd.res$d)
-Ss<-S[,1:params$n_features]
-V<-svd.res$v[,1:params$n_features]
+S<-diag(svd.res$d) # Creating diagonal matrix from eigenvalue vector
+Ss<-S[,1:params$n_features] # Taking n column vectors of S
+V<-svd.res$v[,1:params$n_features] # Taking n column vectors of V 
 restr<-svd.res$u %*% Ss %*% t(V) # U * S * V^T
 restr <- scale(restr, center = -1 * c_means, scale=FALSE)
 ```
@@ -211,7 +211,7 @@ V<-svd.res$v[,1:i]
 gx<-svd.res$u[sel,] %*% Sss %*% t(V) # U * S * V^T
 gx <- scale(gx, center = -1 * c_means, scale=FALSE)
 png(file.path("images","slow",name))
-par()
+par(mar = c(0,0,4.1,0))
 plotImage(gx[1,],title = i)
 dev.off()
 }
@@ -226,7 +226,7 @@ V<-svd.res$v[,1:i]
 gx<-svd.res$u[sel,] %*% Sss %*% t(V) # U * S * V^T
 gx <- scale(gx, center = -1 * c_means, scale=FALSE)
 png(file.path("images","fast",name))
-par()
+par(mar = c(0,0,4.1,0))
 plotImage(gx[1,],title = i)
 dev.off()
 }
@@ -391,7 +391,7 @@ kable(cMat_GLMB$table,"html") %>%
 
 ```{r performance stats, echo=FALSE}
 perf<-rbind(FDA=c(cMat_FDA$overall["Accuracy"],cMat_FDA$byClass[c(1,2,5,6,7,8,9,10,11)]),
-                  XBG=c(cMat_XGB$overall["Accuracy"],cMat_XGB$byClass[c(1,2,5,6,7,8,9,10,11)]),
+                  XGB=c(cMat_XGB$overall["Accuracy"],cMat_XGB$byClass[c(1,2,5,6,7,8,9,10,11)]),
                         C5.0=c(cMat_C5.0$overall["Accuracy"],cMat_C5.0$byClass[c(1,2,5,6,7,8,9,10,11)]),
                               GMLBoost=c(cMat_GLMB$overall["Accuracy"],cMat_GLMB$byClass[c(1,2,5,6,7,8,9,10,11)]))
 kable(perf,"html") %>% 
@@ -419,10 +419,12 @@ pca.ind <- pca.res$x
 ##
 sel_class<-"sex"
 training<-data.frame(Class=meta_TR[[sel_class]],pca.res$x) ### Only thing needed to change selected class
+
 ##
 preProcValues <- preProcess(training, method = c("center","scale"))
 trainTransformed <- predict(preProcValues, training)
 test_PCA<- predict(pca.res, newdata = dat_T[,-nzv])
+test_PCA<-data.frame(Class=meta_T[[sel_class]],test_PCA)
 testTransformed<-predict(preProcValues, test_PCA)
 ```
 
@@ -448,7 +450,7 @@ ggplot(lift_obj, values = 60)
 ### PCA Confusion Mats
 
 ```{r PCA confusion mats,echo=FALSE}
-p_results<-data.frame(Class=test$Class)
+p_results<-data.frame(Class=testTransformed$Class)
 p_results$FDA <- predict(fda, testTransformed)
 p_results$XGB <- predict(rf_fit, testTransformed)
 p_results$C5.0 <- predict(c5, testTransformed)
@@ -494,7 +496,7 @@ kable(cMat_GLMB$table,"html") %>%
 
 ```{r PCA performance stats, echo=FALSE}
 perf<-rbind(FDA=c(cMat_FDA$overall["Accuracy"],cMat_FDA$byClass[c(1,2,5,6,7,8,9,10,11)]),
-                  XBG=c(cMat_XGB$overall["Accuracy"],cMat_XGB$byClass[c(1,2,5,6,7,8,9,10,11)]),
+                  XGB=c(cMat_XGB$overall["Accuracy"],cMat_XGB$byClass[c(1,2,5,6,7,8,9,10,11)]),
                         C5.0=c(cMat_C5.0$overall["Accuracy"],cMat_C5.0$byClass[c(1,2,5,6,7,8,9,10,11)]),
                               GMLBoost=c(cMat_GLMB$overall["Accuracy"],cMat_GLMB$byClass[c(1,2,5,6,7,8,9,10,11)]))
 kable(perf,"html") %>% 
