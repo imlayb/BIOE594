@@ -1,11 +1,14 @@
 ---
 title: "Eigenface Exploration"
+author: "Ben Imlay"
 params:
   n_features: 1000
 bibliography: eigenfaces.bib
 output:
-  html_notebook: default
-  html_document: default
+  html_document:
+    theme: cosmo
+  html_notebook:
+    theme: cosmo
 ---
 ```{r required packages,message=FALSE,warning=FALSE}
 source("eigenfaces.R")
@@ -15,7 +18,6 @@ library(kableExtra)
 library(ggplot2)
 library(ggfortify)
 library(gridExtra)
-library(factoextra)
 library(caret)
 ```
 
@@ -79,27 +81,27 @@ dat_TR<-dat[trainIndex,]
 dat_T<-dat[-trainIndex,]
 ```
 
-The training set consists of `r nrow(dat_TR)` faces, and the test set consists `r nrow(dat_T)` observations. There are a handful of entries in the data that are not contained in the meta. And there are numerous images which do not contain any information. Both have been removed.
+The training set consists of `r nrow(dat_TR)` faces, and the test set consists `r nrow(dat_T)` observations. There are a handful of entries in the data that are not contained in the meta. And there are numerous images which do not contain any information. Both have been removed. However, as we will see later, there are dozens of images that feature people turned to the side, dark images, and images with a single non-black pixel.
 
 ## Metadata EDA
 
 ```{r metadata barplot,echo=FALSE,fig.height=6,fig.width=9,fig.align='center'}
-foo<-function() {p1<-qplot(sex,data=meta_TR)+ggtitle("Sex")+coord_flip()+theme_classic()
-p2<-qplot(age,data=meta_TR)+ggtitle("Age")+coord_flip()+theme_classic()
-p3<-qplot(race,data=meta_TR)+ggtitle("Race")+coord_flip()+theme_classic()
-p4<-qplot(face,data=meta_TR)+ggtitle("Face")+coord_flip()+theme_classic()
-p5<-qplot(prop,data=meta_TR)+ggtitle("Prop")+coord_flip()+theme_classic()
-grid.arrange(p1,p2,p3,p4,p5,tableGrob(count(meta_TR[,2:3]),rows=NULL),ncol=3,top="Exploratory Data Analysis")}
+foo<-function() {p1<-qplot(sex,data=meta_TR)+ggtitle("Sex")+coord_flip()+theme_minimal()
+p2<-qplot(age,data=meta_TR)+ggtitle("Age")+coord_flip()+theme_minimal()
+p3<-qplot(race,data=meta_TR)+ggtitle("Race")+coord_flip()+theme_minimal()
+p4<-qplot(face,data=meta_TR)+ggtitle("Face")+coord_flip()+theme_minimal()
+p5<-qplot(prop,data=meta_TR)+ggtitle("Prop")+coord_flip()+theme_minimal()
+grid.arrange(p1,p2,p3,p4,p5,tableGrob(table(as.data.frame(meta_TR[,2:3]))),ncol=3,top="Exploratory Data Analysis")}
 foo()
 ```
 
 ### EDA Takeaways
 
-Each of the available metadata fields are highly biased. Most pictures are of white, adult, male subjects. The two largest groups are adult females and adult males. Given that, I will only consider white adults. This significantly limits the scope of any successful classifiers based on this data; it would not be generalizable to the population at large.
+Each of the available metadata fields are highly biased. Most pictures are of white, adult, male subjects. The two largest groups are adult females and adult males. I considered creating a subset of only white adults, but I chose against it for the sake of generalizability. Allowing small sub-groups into the training and test sets will potentially hamper performance, but I am more interested in the relative performance of different models than in absolute performance.
 
 ## Average faces
 
-The average face is computed by taking the average of each column across all of the training data. This vector is important for centering each pixel for subsequent decomposition.
+The average face is computed by taking the average of each column across all of the training data. This vector is important for centering each pixel for subsequent decomposition. The average faces reveal a few trends. Namely that the female face has less prominent ears; presumably because more female faces have long hair. Moreover, the eyes of the male face appear slightly less tilted, and the face appears slightly larger.
 
 ```{r average face calc}
 c_means = colMeans(dat_TR)
@@ -114,8 +116,6 @@ plotImage(colMeans(dat_TR[meta_TR[meta_TR$sex=="female",]$n,]),"Average Female F
 plotImage(colMeans(dat_TR[meta_TR[meta_TR$sex=="male",]$n,]),"Average Male Face")}
 foo()
 ```
-
-The average faces reveal a few trends. Namely that the female face has less prominent ears; presumably because more female faces have long hair. Moreover, the eyes of the male face appear slightly less tilted, and the face appears slightly larger.
 
 ## SVD and Eigenfaces
 
@@ -137,11 +137,11 @@ SVD is a decomposition method that is applicable for any matrix, and is defined 
 
 $$A=USV^T$$
 
-In R, `svd()` produces `u`, which represents $U$; `d`. which is a vector for $S$; `v`, which represents $V^T$.
+In R, `svd()` produces `u`, which represents $U$; `d`. which is a vector for $S$; `v`, which represents $V^T$. SVD is simply a generalization of the eigendecomposition. For our rectangular matrix, the eigen values correspond to the same eigen values one would find through a the traditional $A^{T}Au_{i}=u_{i}\lambda_{i}$ route. I chose SVD to practice working with the results of that decomposition method, and the computational times were similar for either method.
 
 ## SVD Dimension Reduction Results
 
-The following graphics exhibit
+The following graphics exhibit that the first few eigenvalues capture a sizable chunk of the total variance - 50% by the third eigenvalue. The proportion of variance explained falls to less than 1% by the 13th eigenvalue. This supported my choice to use only 100 principal components for classification later on.
 
 ```{r SVD diagnostics,fig.height=7,fig.width=10,echo=FALSE}
 foo2<-function(d) {
@@ -160,11 +160,13 @@ p2<-tableGrob(x[1:20,c(2,3)])
 grid.arrange(p1,p2,ncol=2)
 ```
 
-Eigenfaces are created from $V_{d,k}$ where $k$ is the number of desired eigenfaces. In R, this is simply `t(svd.res$v[,1:k])`, where each columns is an eigenvector.
+Eigenfaces are created from $V_{d,k}$ where $k$ is the number of desired eigenfaces. In R, this is simply `t(svd.res$v[,1:k])`, where each columns is an eigenvector. These eigenfaces appear to capture key differences between people's faces. The first appears to capture a contrast between the background and the face. The second appears to capture a contrast between the background and hair. The third appears to capture some contrast involving the forehead. 5 and 6 appear to capture different lighting angles.
 
-```{r plot eigen faces,echo=FALSE}
+Many of these eigenfaces convey conditions of the picture rather than information about that attributes of the shape. Nonetheless, eigenfaces such as 9 may be associated with gender.
+
+```{r plot eigen faces,echo=FALSE,fig.height=6}
 par(mfrow = c(2, 5))
-par(oma = rep(2, 4), mar = c(0, 0, 3, 0))
+par(mar = c(0, 0, 4.1, 0))
 for(i in seq(1:10)) {
   plotImage(t(svd.res$v[,i]),paste0(i))
 }
@@ -183,7 +185,7 @@ restr <- scale(restr, center = -1 * c_means, scale=FALSE)
 ```
 
 
-These reconstructed faces can be plotted and compared to the original images.
+These reconstructed faces can be plotted and compared to the original images. By `r params$n_features`, the approximation is excellent. Only regions of very high, random variance such as the areas around the edges of the head are still blurry. At this point, the images could pass as poorly compressed JPEG images!
 
 ```{r plot reconstructed faces,echo=FALSE}
 par(mfrow = c( 2,4))
@@ -330,7 +332,9 @@ plotVarImp(rf_fit,title="XGBoost Tree")
 plotVarImp(c5,title="C5.0")}
 ```
 
-### NZV-based Lift Results and Plot
+### NZV-based Cumulative Gains Plot
+
+The cumulative gains plot is typically used for response vs. control situations where one is interested in capturing some subset of the most likely responders. The X-axis represents a descending list of high-confidence female predictions for each model. For example, the first 10% on the X-axis is the 10% most confident female predictions for each model. The Y-axis is simply the percentage of responders (females) found. If XGB passes through X=10% and Y=8%, that means it found 8% of the total females in the 10% of its highest confidence predictions. This plot can give insight into model performance even if the accuracies are ultimately similar between models. This metric is a bit more robust to extremely difficult test set images. This is reasonable for our us because some of the images are quite ambiguous.
 
 ```{r lift results and plots}
 lift_results <- data.frame(Class = testTransformed$Class)
@@ -342,7 +346,11 @@ lift_obj <- lift(Class ~ FDA + XGB + C5.0+GLMB, data = lift_results)
 ggplot(lift_obj, values = 60)
 ```
 
-### NZV-based Test Set Confusion Matrices
+### NZV-based Results
+
+The actual performance of the models were lackluster. The accuracies milled around the 70% mark, which was only marginally better than the majority classifier for gender. The sensitivity was essentially coin toss at 50% for each model. That is, they had a 50% chance of accurately predicting a female when they predicted female. The very poor performance of these models is likely the result of too many features and lack of relation between features. Pixels in isolation are not very informative of attributes such as gender.
+
+####Test Set Confusion Matrices
 
 ```{r confusion mats,echo=FALSE}
 p_results<-data.frame(Class=test$Class)
@@ -387,7 +395,7 @@ kable(cMat_GLMB$table,"html") %>%
 <br>
 <br>
 
-### NZV-based Accuracy Metrics Table
+#### Accuracy Metrics
 
 ```{r performance stats, echo=FALSE}
 perf<-rbind(FDA=c(cMat_FDA$overall["Accuracy"],cMat_FDA$byClass[c(1,2,5,6,7,8,9,10,11)]),
@@ -400,7 +408,7 @@ kable(perf,"html") %>%
 
 ## Principal Component Pre-processing
 
-Since using a cropped face vector did not yield great results, my second approach will be to use each images projections in the first 100 principal compenents as features. I will still remove NZV pixels to enable scaling of each pixel feature.
+Since using a cropped face vector did not yield great results, my second approach was to use each images projections in the first 100 principal compenents as features. Though I still remove NZV pixels to enable scaling of each pixel feature. As we have seen in the SVD plots, the eigenfaces appear to sometimes catch gender associated traits such as shading around where long hair might be.
 
 ```{r PCA, eval=F}
 ### REQUIRED ON FIRST RUN
@@ -435,7 +443,9 @@ The script used for generating the models is nearly identical to the script used
 load(file.path("models","sex_PCA_liftcent_models.Rdata"))
 ```
 
-### PCA Lift Results and Plot
+### PCA Cumulative Gains Plot
+
+The cumulative gains plot begin to exemplify how using eigenfaces improved the model's performances. Here we can see that XGB and C5.0 were remarkably accurate among their highest confidence predictions. This trend is different than for the NZV pre-processed models. The feature importance plot for C5.0 appeared to show that the model did not handle so many features very well. 100 features was likely a more comfortable place for C5.0, which is a tree based method. This plot helps confirm that XGB is a robust classifier with its mastery of hyperparameter tuning. 100 features may still have been too many for FDA.
 
 ```{r PCA lift results and plots}
 lift_results <- data.frame(Class = testTransformed$Class)
@@ -444,10 +454,14 @@ lift_results$XGB <- predict(rf_fit, testTransformed, type = "prob")[,"female"]
 lift_results$C5.0 <- predict(c5, testTransformed, type = "prob")[,"female"]
 lift_results$GLMB <- predict(glmboost, testTransformed, type = "prob")[,"female"]
 lift_obj <- lift(Class ~ FDA + XGB + C5.0+GLMB, data = lift_results)
-ggplot(lift_obj, values = 60)
+ggplot(lift_obj, values = 60)+ggtitle("")
 ```
 
-### PCA Confusion Mats
+### PCA Results
+
+#### Confusion Mats
+
+Using the first 100 most important principal components afforded an appreciable performance increase. This makes sense as each component considers the entirety of each image. The major limitation of using pixels directly is how weak each feature is. One pixel may be important in the classification of some cases, but the neighbor pixel may be important for some others. There is no way for the classifier to make those associations when treating each image as a vector of pixel values. 
 
 ```{r PCA confusion mats,echo=FALSE}
 p_results<-data.frame(Class=testTransformed$Class)
@@ -503,9 +517,143 @@ kable(perf,"html") %>%
   kable_styling(bootstrap_options = "striped", full_width = F)
 ```
 
-# Microsoft Azure Face Landmark Detection and Eigenface Reannotation
+## Microsoft Azure Face Detection
+
+Microsoft's cloud computing platform, Azure, offers cognitive services inlcuding facial recognition. With models of my own performing reasonably well, I wanted to compare my results with cutting-edge facial recognition services. As such, I processed the entire MIT face recognition dataset through the cognitive services API from Azure. Trial accounts can processed up to 20 images per minute. I accomplished this with two scripts. The first script generates JPEG images from all of the binary files, sends the jpeg to the API, and then collects the result. The second script binds those results into a TSV and also writes a list of images for which the API does not return a result.
+
+There are a variety of parameters for each API request. More information can be found [here](https://westus.dev.cognitive.microsoft.com/docs/services/563879b61984550e40cbbe8d/operations/563879b61984550f30395236).
+
+The parameters decide which model to use and which features to request back. I used the following:
+
+>`"?returnFaceId=true&returnFaceLandmarks=true&returnFaceAttributes=age,gender,smile,facialHair,glasses,emotion,accessories&recognitionModel=recognition_02"`
+
+This means I requested the following features:
+
+1. Face landmarks
+2. Age
+3. Smile
+4. Facial hair
+5. Glasses
+6. Emotion
+7. Accessories
+8. Use of recongition model 2, released in March 2019.
 
 
+```{r cognitive services api, eval=F}
+# Processing your own images requires a key file called 'keys' in json format with an entry called 'key1'
+source("Azure_classification.R")
+source("Azure_processing.R")
+```
+
+```{r loading Azure results}
+azure_df<-data.table::fread("Azure_Results.tsv",sep = "\t",header = T,data.table = F)
+azure_df$n<-as.character(azure_df$n);azure_df$faceAttributes.gender<-as.factor(azure_df$faceAttributes.gender)
+rownames(azure_df)<-azure_df$n
+null_images<-data.table::fread("Failed_Azure_Images.tsv",header=T,data.table=F)
+meta_azure<-meta[azure_df$n,] #only include images that Azure successfully classified
+meta_azure$sex<-as.factor(meta_azure$sex)
+```
+
+### Reannotated EDA
+
+The Azure Congitive Services API did remarkably well based on the ratio of female to males. The fact that the API could preserve the imbalanced gender ratio is a good sign as each classification was entirely independent of the other images.
+
+```{r Azure EDA,echo=F,fig.height=6,fig.width=6,results='hide',message=F}
+#tableGrob(table(as.data.frame(meta_TR[,2:3])))
+foo<-function() {p1<-qplot(faceAttributes.gender,data=azure_df)+ggtitle("Azure Gender")+coord_flip()+theme_minimal()
+p2<-qplot(faceAttributes.age,data=azure_df)+ggtitle("Azure Age")+theme_minimal()
+p3<-qplot(sex,data=meta_azure)+ggtitle("Original Gender")+coord_flip()+theme_minimal()
+p4<-qplot(age,data=meta_azure)+ggtitle("Original Age")+coord_flip()+theme_minimal()
+grid.arrange(p1,p2,p3,p4,ncol=2,top="Azure vs. Original Annotation: Gender & Age")}
+foo()
+```
+
+### Confusion Matrix - Gender
+
+Below are confusion matrices and performance metrics for all models. The accuracy is only barely higher than the XGB and C5.0 models. I found this result to be spectacular news for both my efforts and the cognitive services API. Though my models are not robust to color images, different size images, non-centered images, and images with objects besides faces, their parity with the state-of-the-art model from Microsoft is reassuring. Simply extracting 100 principal components from a data set is sufficient to achieve most of the performance of an enterprise classifier - at least when it comes to gender.
+
+```{r Azure tables gender,echo=FALSE}
+# hard coded for gender
+cMat_Azure<-confusionMatrix(data = azure_df$faceAttributes.gender, reference = meta_azure$sex)
+kable(cMat_FDA$table,"html") %>% 
+  kable_styling(bootstrap_options = "striped", full_width = F,position="float_left") %>% 
+    add_header_above(c("Pred.","Ref."= 2)) %>%
+      add_header_above(c("Azure"= 3))
+perf<-rbind(FDA=c(cMat_FDA$overall["Accuracy"],cMat_FDA$byClass[c(1,2,5,6,7,8,9,10,11)]),
+                  XGB=c(cMat_XGB$overall["Accuracy"],cMat_XGB$byClass[c(1,2,5,6,7,8,9,10,11)]),
+                        C5.0=c(cMat_C5.0$overall["Accuracy"],cMat_C5.0$byClass[c(1,2,5,6,7,8,9,10,11)]),
+                              GMLBoost=c(cMat_GLMB$overall["Accuracy"],cMat_GLMB$byClass[c(1,2,5,6,7,8,9,10,11)]),
+                                  Azure=c(cMat_Azure$overall["Accuracy"],cMat_Azure$byClass[c(1,2,5,6,7,8,9,10,11)]))
+kable(perf,"html") %>% 
+  kable_styling(bootstrap_options = "striped", full_width = F)
+```
+
+### Azure Classification Failure
+
+There were `r nrow(null_images)` images of the total `r nrow(dat)` images that failed to be classified by Azure. Below are a sampling of these images. In general, Azure failed on non-direct faces, of which there were many. It also failed on blank images, which is reasonable. But it also failed on various clear images. My guess is that there simply was not enough contrast or resolution to identify facial landmarks. People with glare on their glasses are common among the Azure failures.
+
+```{r Azure fail plot images,fig.height=9,fig.width=9,collapse=TRUE,results= 'hold',message=F,echo=F}
+#This code may be run multiple times to see the huge diversity of images in the data.
+par(mfrow=c(3,3),mar=c(0,0,4.1,0))
+selected<-sample(as.character(null_images$null_images),9)
+{plotImage(dat[selected[1],],selected[1])
+plotImage(dat[selected[2],],selected[2])
+plotImage(dat[selected[3],],selected[3])
+plotImage(dat[selected[4],],selected[4])
+plotImage(dat[selected[5],],selected[5])
+plotImage(dat[selected[6],],selected[6])
+plotImage(dat[selected[7],],selected[7])
+plotImage(dat[selected[8],],selected[8])
+plotImage(dat[selected[9],],selected[9])}
+```
+
+### Azure emotion classification
+
+Though the Azure classifications do not directly line up with provided metadata from MIT, we can plot a few of the high confidence images for each emotion to see what kind of traits the Azure model may be looking for.
+
+#### Surprise
+
+```{r Surprise plots,echo=F,fig.height=3,fig.width=6,results='hide',message=F}
+par(mfrow=c(1,3),mar=c(0,0,4.1,0))
+selected<-rownames(azure_df[order(-azure_df$faceAttributes.emotion.surprise),])
+{
+plotImage(dat[selected[1],],selected[1])
+plotImage(dat[selected[2],],selected[2])
+plotImage(dat[selected[3],],selected[3])
+}
+```
+
+#### Anger
+
+```{r Anger plots,echo=F,fig.height=3,fig.width=6,results='hide',message=F}
+par(mfrow=c(1,3),mar=c(0,0,4.1,0))
+selected<-rownames(azure_df[order(-azure_df$faceAttributes.emotion.anger),])
+{
+plotImage(dat[selected[1],],selected[1])
+plotImage(dat[selected[2],],selected[2])
+plotImage(dat[selected[3],],selected[3])
+}
+```
+
+#### Sadness
+
+```{r Sadness plots,echo=F,fig.height=3,fig.width=6,results='hide',message=F}
+par(mfrow=c(1,3),mar=c(0,0,4.1,0))
+selected<-rownames(azure_df[order(-azure_df$faceAttributes.emotion.sadness),])
+{
+plotImage(dat[selected[1],],selected[1])
+plotImage(dat[selected[2],],selected[2])
+plotImage(dat[selected[3],],selected[3])
+}
+```
+
+The Cognitive Services API did remarkably well flagging these images with the respective emotion. However, Azure encodes its predictions as probabilities for each emotional state. This means a threshold would need to be set to extract a single emotional state from an image.
+
+## Conclusions and Future Directions
+
+Through the variety of pre-processing methods, classifiers, and the Azure API, I believe that I have achieved the objectives of this project. I observed appreciable improvements as I moved through the different pre-processing methods. The improvement mirrored the progress of the facial recognition field at large. I started with direct classifiers, I moved on to simple dimension reduction, and I finished with a modern implementation.
+
+The lift plots also enabled visualization of how 
 
 # References
 

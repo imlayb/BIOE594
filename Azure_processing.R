@@ -26,5 +26,5 @@ results_df<-extractDF(azure_list)
 null_images<-results_df[[2]]
 results_df<-results_df[[1]]
 
-fwrite(results_df,file = "Azure_Results.tsv",sep = "\t",row.names = T,col.names = T)
+fwrite(results_df,file = "Azure_Results.tsv",sep = "\t",col.names = T)
 fwrite(data.frame(null_images),file = "Failed_Azure_Images.tsv",sep = "\t",row.names = F,col.names = T)
