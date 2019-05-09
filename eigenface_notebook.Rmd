@@ -37,14 +37,14 @@ My objective was two-fold, a data science exploration of dimension reduction in 
 # Methods
 
 ## Data Import
-The eigenface rawdata is packaged with this repository and can be loaded with the following code. Two pictures were remove from the rawdata as provided from MIT because they were of incorrect dimensions: 2416 and 2412. Moreover, 22 faces are removed for having no parsed information.
+The eigenface rawdata is packaged with this repository and can be loaded with the following code. Two pictures were removed from the rawdata as provided from MIT because they were of incorrect dimensions: 2416 and 2412. Moreover, 22 faces are removed for having no parsed information.
 
 ```{r data import, message=FALSE, warning=FALSE, include=TRUE}
 source("eigenfaces.R")
 dat<-importFaceMatrix()
 ```
 
-Each picture is represented as vector of length $128^{2}=16,384$. This vector can be reshaped into a raster, which can be colored with a color scale — grayscale in our case. Three random faces have been generated below.
+Each picture is represented as vector of length $128^{2}=16,384$. This vector can be reshaped into a matrix, which can be colored with a color scale — grayscale in our case. Three random faces have been generated below.
 
 ```{r plot images,fig.height=3,fig.width=9,collapse=TRUE,results= 'hold'}
 #This code may be run multiple times to see the huge diversity of images in the data.
@@ -164,7 +164,7 @@ Eigenfaces are created from $V_{d,k}$ where $k$ is the number of desired eigenfa
 
 Many of these eigenfaces convey conditions of the picture rather than information about that attributes of the shape. Nonetheless, eigenfaces such as 9 may be associated with gender.
 
-```{r plot eigen faces,echo=FALSE,fig.height=6}
+```{r plot eigen faces,echo=FALSE,fig.height=6,fig.width=9}
 par(mfrow = c(2, 5))
 par(mar = c(0, 0, 4.1, 0))
 for(i in seq(1:10)) {
@@ -268,7 +268,7 @@ trainTransformed <- predict(preProcValues, training)
 testTransformed<-predict(preProcValues, test)
 ```
 
-After pre-processing, the transformed training data generates four models. More information about each model can be found in the `caret` documentation. I chose these models to cover a variety of types: boosted, regression, ensemble, decision tree/rule-based, and regression. This panel is not exhaustive by any means.
+After pre-processing, the transformed training data generates four models. More information about each model can be found in the `caret` documentation. I chose these models to cover a variety of types: boosted, regression, ensemble, decision tree/rule-based, and regression. This panel is not exhaustive by any means. The NZV pre-processing resulted in a total of `r length(non_nzv)` features. This proved to be extremely computationally expensive; training the models took nearly 32 hours. 
 
 ```{r model generation,eval=FALSE}
 liftCtrl <- trainControl(method = "cv", classProbs = TRUE,
@@ -308,7 +308,7 @@ load(file.path("models","sexliftcent_models.Rdata"))
 
 ### NZV-based Variable Importance Figures
 
-The models are then analyzed through `varImp` in `caret`. The plots show both how different classifiers use different numbers of features and how the models *see* the data. Intuitively, some of the models picked up on important variance around the eyes and the peripheries of the head.
+The models are then analyzed through `varImp` in `caret`. The plots show both how different classifiers use different numbers of features and how the models *see* the data. Intuitively, some of the models picked up on important variance around the eyes and the peripheries of the head. There is also evidence of differences in how the different models deal with high dimensionality; C5.0 appears to be highly inclusive whereas FDA identifies only a handful of pixels for classification.
 
 ```{r model analysis,message=FALSE,echo=FALSE}
 plotVarImp<-function(model,title=NULL) {
@@ -334,9 +334,11 @@ plotVarImp(c5,title="C5.0")}
 
 ### NZV-based Cumulative Gains Plot
 
-The cumulative gains plot is typically used for response vs. control situations where one is interested in capturing some subset of the most likely responders. The X-axis represents a descending list of high-confidence female predictions for each model. For example, the first 10% on the X-axis is the 10% most confident female predictions for each model. The Y-axis is simply the percentage of responders (females) found. If XGB passes through X=10% and Y=8%, that means it found 8% of the total females in the 10% of its highest confidence predictions. This plot can give insight into model performance even if the accuracies are ultimately similar between models. This metric is a bit more robust to extremely difficult test set images. This is reasonable for our us because some of the images are quite ambiguous.
+The cumulative gains plot is typically used for response vs. control situations where one is interested in capturing some subset of the most likely responders. The X-axis represents a descending list of high-confidence female predictions for each model. For example, the first 10% on the X-axis is the 10% most confident female predictions for each model. The Y-axis is simply the percentage of responders (females) found. If XGB passes through X=10% and Y=8%, that means it found 8% of the total females in the 10% of its highest confidence predictions. This plot can give insight into model performance even if the accuracies are ultimately similar between models. This metric is a bit more robust to extremely difficult test set images. This is reasonable for us because some of the images are quite ambiguous.
 
-```{r lift results and plots}
+The results for the NZV pre-processing alone show a definitive lead for the XGB and C5.0 modells. This makes sense as they are most robust to a high number of features. Linear models are penalized heavily for too many coefficients. And we know that that important pixels may be different from image to image. 
+
+```{r lift results and plots,echo=F}
 lift_results <- data.frame(Class = testTransformed$Class)
 lift_results$FDA <- predict(fda, testTransformed, type = "prob")[,"female"]
 lift_results$XGB <- predict(rf_fit, testTransformed, type = "prob")[,"female"]
@@ -348,7 +350,7 @@ ggplot(lift_obj, values = 60)
 
 ### NZV-based Results
 
-The actual performance of the models were lackluster. The accuracies milled around the 70% mark, which was only marginally better than the majority classifier for gender. The sensitivity was essentially coin toss at 50% for each model. That is, they had a 50% chance of accurately predicting a female when they predicted female. The very poor performance of these models is likely the result of too many features and lack of relation between features. Pixels in isolation are not very informative of attributes such as gender.
+The actual performances of the models were rather good. The performance using a true random test set and training set was much better than using the MIT supplied sets. The accuracies milled around the 80% mark, which is pretty good considering how many difficult images are lurking in the data set. When using pixels as features, tree-based models had an obvious advantage; they can weight many weak classifiers to yield strong classifiers. The linear model and discriminant analysis technique search for a small, robust set of features, which would fail if an image is even slightly off center. This intuitive advantage is seen in the higher accuracy for the tree-based models.
 
 ####Test Set Confusion Matrices
 
@@ -408,7 +410,9 @@ kable(perf,"html") %>%
 
 ## Principal Component Pre-processing
 
-Since using a cropped face vector did not yield great results, my second approach was to use each images projections in the first 100 principal compenents as features. Though I still remove NZV pixels to enable scaling of each pixel feature. As we have seen in the SVD plots, the eigenfaces appear to sometimes catch gender associated traits such as shading around where long hair might be.
+To see how far I could push the accuracy and how the different models might respond to a different pre-processing scheme, my second approach was to use each image's projections in the first 100 principal compenents as features. Though I still remove NZV pixels to enable scaling of each pixel feature. As we have seen in the SVD plots, the eigenfaces appear to sometimes catch gender associated traits such as shading around where long hair might be. This encouraged me that using the eigenfaces may yield better performance in some way over pixels alone.
+
+Moreover, the principal component scheme trained much, much faster than the NZV pre-processing alone. The models finished training in approximately 16 hours.
 
 ```{r PCA, eval=F}
 ### REQUIRED ON FIRST RUN
@@ -443,11 +447,31 @@ The script used for generating the models is nearly identical to the script used
 load(file.path("models","sex_PCA_liftcent_models.Rdata"))
 ```
 
+### PCA Variable Importance
+
+The models only had 100 features to train with, but the feature importance metrics tell the same story as with NZV pre-processing alone. FDA chose relatively few features, followed by GLMB, XGB, and C5.0. However, of interest here is how most of the models weighted certain principal components relatively higher than others - namely PC9. The ninth eigenface appears to show the shading of a mustache, which would be a helpful attribute in classifying gender.
+
+```{r PCA varimp,echo=F}
+imp<-varImp(fda,scale=T)$importance
+imp<-cbind(imp,varImp(rf_fit,scale=T)$importance)
+imp<-cbind(imp,varImp(c5,scale=T)$importance)
+imp<-cbind(imp,varImp(glmboost,scale=T)$importance)
+imp$PC<-rownames(imp)
+imp<-imp[gtools::mixedsort(imp$PC),]
+names(imp)<-c("FDA","XGB","C5.0","GLMB","Component")
+n<-100
+kable(imp[1:n,c(5,1,2,3,4)],"html",row.names = FALSE) %>% # need a better way to do this
+  kable_styling(bootstrap_options = "striped", full_width = T) %>%
+      scroll_box(width = "100%", height = "200px")
+plotImage(t(svd.res$v[,9]),paste0(9))
+```
+
+
 ### PCA Cumulative Gains Plot
 
-The cumulative gains plot begin to exemplify how using eigenfaces improved the model's performances. Here we can see that XGB and C5.0 were remarkably accurate among their highest confidence predictions. This trend is different than for the NZV pre-processed models. The feature importance plot for C5.0 appeared to show that the model did not handle so many features very well. 100 features was likely a more comfortable place for C5.0, which is a tree based method. This plot helps confirm that XGB is a robust classifier with its mastery of hyperparameter tuning. 100 features may still have been too many for FDA.
+The cumulative gains plot tells about the same story as for NZV pre-processing alone. Tree-based classifiers may have an overall edge in scenarios such as image processing where classifications can be the result of many, ambiguous features.
 
-```{r PCA lift results and plots}
+```{r PCA lift results and plots,echo=F}
 lift_results <- data.frame(Class = testTransformed$Class)
 lift_results$FDA <- predict(fda, testTransformed, type = "prob")[,"female"]
 lift_results$XGB <- predict(rf_fit, testTransformed, type = "prob")[,"female"]
@@ -459,9 +483,9 @@ ggplot(lift_obj, values = 60)+ggtitle("")
 
 ### PCA Results
 
-#### Confusion Mats
+The accuracies were marginally worse overall. This came to my great surprise. My reasoning is that despite the huge number of features when using NZV pre-processing alone the models are highly effective at weighting each pixel - even feature-limited models such as FDA and GLMB. Moreover, the margins of loss are quite small. In reality, the PCA models performed about the same while taking much less time to train.
 
-Using the first 100 most important principal components afforded an appreciable performance increase. This makes sense as each component considers the entirety of each image. The major limitation of using pixels directly is how weak each feature is. One pixel may be important in the classification of some cases, but the neighbor pixel may be important for some others. There is no way for the classifier to make those associations when treating each image as a vector of pixel values. 
+#### Confusion Mats
 
 ```{r PCA confusion mats,echo=FALSE}
 p_results<-data.frame(Class=testTransformed$Class)
@@ -519,7 +543,9 @@ kable(perf,"html") %>%
 
 ## Microsoft Azure Face Detection
 
-Microsoft's cloud computing platform, Azure, offers cognitive services inlcuding facial recognition. With models of my own performing reasonably well, I wanted to compare my results with cutting-edge facial recognition services. As such, I processed the entire MIT face recognition dataset through the cognitive services API from Azure. Trial accounts can processed up to 20 images per minute. I accomplished this with two scripts. The first script generates JPEG images from all of the binary files, sends the jpeg to the API, and then collects the result. The second script binds those results into a TSV and also writes a list of images for which the API does not return a result.
+Microsoft's cloud computing platform, Azure, offers cognitive services inlcuding facial recognition. With models of my own performing reasonably well, I wanted to compare my results with cutting-edge facial recognition services. The Azure results will give insight into the inherent problems within the dataset. If their model can't perform perfectly, then it is unlikely that any contemporary model would perform better. There are indeed problematic pictures and ambiguous individuals which could be skewing accuracy of my models.
+
+As such, I processed the entire MIT face recognition dataset through the cognitive services API from Azure. Trial accounts can processed up to 20 images per minute. I accomplished this with two scripts. The first script generates JPEG images from all of the binary files, sends the jpeg to the API, and then collects the result. The second script binds those results into a TSV and also writes a list of images for which the API does not return a result.
 
 There are a variety of parameters for each API request. More information can be found [here](https://westus.dev.cognitive.microsoft.com/docs/services/563879b61984550e40cbbe8d/operations/563879b61984550f30395236).
 
@@ -570,12 +596,12 @@ foo()
 
 ### Confusion Matrix - Gender
 
-Below are confusion matrices and performance metrics for all models. The accuracy is only barely higher than the XGB and C5.0 models. I found this result to be spectacular news for both my efforts and the cognitive services API. Though my models are not robust to color images, different size images, non-centered images, and images with objects besides faces, their parity with the state-of-the-art model from Microsoft is reassuring. Simply extracting 100 principal components from a data set is sufficient to achieve most of the performance of an enterprise classifier - at least when it comes to gender.
+Below are confusion matrices and performance metrics for all models. The accuracy is only barely higher than the XGB and C5.0 models. I found this result to be spectacular news for both my efforts and the cognitive services API. Though my models are not robust to color images, different size images, non-centered images, and images with objects besides faces, their parity with the state-of-the-art model from Microsoft is reassuring. Simply passing an image directly into an XGB classifier is on par with an enterprise classifier for gender prediction!
 
 ```{r Azure tables gender,echo=FALSE}
 # hard coded for gender
 cMat_Azure<-confusionMatrix(data = azure_df$faceAttributes.gender, reference = meta_azure$sex)
-kable(cMat_FDA$table,"html") %>% 
+kable(cMat_Azure$table,"html") %>% 
   kable_styling(bootstrap_options = "striped", full_width = F,position="float_left") %>% 
     add_header_above(c("Pred.","Ref."= 2)) %>%
       add_header_above(c("Azure"= 3))
@@ -590,7 +616,9 @@ kable(perf,"html") %>%
 
 ### Azure Classification Failure
 
-There were `r nrow(null_images)` images of the total `r nrow(dat)` images that failed to be classified by Azure. Below are a sampling of these images. In general, Azure failed on non-direct faces, of which there were many. It also failed on blank images, which is reasonable. But it also failed on various clear images. My guess is that there simply was not enough contrast or resolution to identify facial landmarks. People with glare on their glasses are common among the Azure failures.
+However, the higher performance of the Azure cognitive services was due in part to the fact that it refused to classify some images.
+
+There were `r nrow(null_images)` images of the total `r nrow(dat)` images that failed to be classified by Azure. If it had been forced to predict the gender of those images at random, this would have lowered the overall performance to just below 90%. Below are a sampling of these images. In general, Azure failed on non-direct faces, of which there were many. It also failed on blank images, which is reasonable. But it also failed on various clear images. My guess is that there simply was not enough contrast or resolution to identify facial landmarks. People with glare on their glasses are common among the Azure failures.
 
 ```{r Azure fail plot images,fig.height=9,fig.width=9,collapse=TRUE,results= 'hold',message=F,echo=F}
 #This code may be run multiple times to see the huge diversity of images in the data.
@@ -651,9 +679,7 @@ The Cognitive Services API did remarkably well flagging these images with the re
 
 ## Conclusions and Future Directions
 
-Through the variety of pre-processing methods, classifiers, and the Azure API, I believe that I have achieved the objectives of this project. I observed appreciable improvements as I moved through the different pre-processing methods. The improvement mirrored the progress of the facial recognition field at large. I started with direct classifiers, I moved on to simple dimension reduction, and I finished with a modern implementation.
-
-The lift plots also enabled visualization of how 
+Through the variety of pre-processing methods, classifiers, and the Azure API, I believe that I have achieved the objectives of this project. I observed the benefits and drawbacks associated with different pre-processing and models. The greatest benefit in this dataset with using eigenfaces instead of images directly was the computational cost. Moreover, I demonstrated that a simple XGB classifier can come within striking distance of enterprise cognitive services in a controlled setting. Given how well Azure did, I am interested in experimentting with mixed models and deep learning. Methods that are better able to interpret many weak, vague signals at once seem to dominate in image processing. 
 
 # References
 
