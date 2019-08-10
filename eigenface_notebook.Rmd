@@ -1,14 +1,15 @@
 ---
 title: "Eigenface Exploration"
 author: "Ben Imlay"
-params:
-  n_features: 1000
-bibliography: eigenfaces.bib
 output:
   html_document:
     theme: cosmo
   html_notebook:
     theme: cosmo
+  pdf_document: default
+params:
+  n_features: 1000
+bibliography: eigenfaces.bib
 ---
 ```{r required packages,message=FALSE,warning=FALSE}
 source("eigenfaces.R")
@@ -451,7 +452,7 @@ load(file.path("models","sex_PCA_liftcent_models.Rdata"))
 
 The models only had 100 features to train with, but the feature importance metrics tell the same story as with NZV pre-processing alone. FDA chose relatively few features, followed by GLMB, XGB, and C5.0. However, of interest here is how most of the models weighted certain principal components relatively higher than others - namely PC9. The ninth eigenface appears to show the shading of a mustache, which would be a helpful attribute in classifying gender.
 
-```{r PCA varimp,echo=F}
+```{r PCA varimp,echo=F,message=F,results='hide'}
 imp<-varImp(fda,scale=T)$importance
 imp<-cbind(imp,varImp(rf_fit,scale=T)$importance)
 imp<-cbind(imp,varImp(c5,scale=T)$importance)
@@ -463,8 +464,12 @@ n<-100
 kable(imp[1:n,c(5,1,2,3,4)],"html",row.names = FALSE) %>% # need a better way to do this
   kable_styling(bootstrap_options = "striped", full_width = T) %>%
       scroll_box(width = "100%", height = "200px")
+```
+
+```{r PC9,fig.height=6,fig.width=7,echo=F}
 plotImage(t(svd.res$v[,9]),paste0(9))
 ```
+
 
 
 ### PCA Cumulative Gains Plot
